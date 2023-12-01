@@ -1,0 +1,1595 @@
+---
+title: "CD8s Monocle"
+author: "Roger Casals"
+date: "2023-05-29"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+
+```{r include=FALSE}
+
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+#library(slingshot)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(dyno)
+library(tidyverse)
+library(dynwrap)
+#library(celldex)
+library(SingleCellExperiment)
+#library(SingleR)
+library(dyneval)
+library(SeuratData)
+library(SeuratDisk)
+library(DESeq2)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(AnnotationDbi)
+library(dittoSeq)
+library(tidyverse)
+library(msigdbr)
+library(clusterProfiler)
+library(fgsea)
+library(org.Hs.eg.db)
+
+
+```
+
+
+# Llegim els objectes Seurat
+
+```{r include=FALSE}
+CD4totssubset <- LoadH5Seurat("totscd8.h5Seurat")
+CD4totssubsetpre <- LoadH5Seurat("precd8.h5Seurat")
+CD4totssubsetpost <- LoadH5Seurat("postcd8.h5Seurat")
+```
+
+
+# Proporcions cel·lulars
+
+```{r}
+
+PRE <- table(CD4totssubsetpre$celltype.cnd)
+POST <- table(CD4totssubsetpost$celltype.cnd)
+prop.pre <- prop.table(table(CD4totssubsetpre$celltype.cnd)) *100
+prop.post <- prop.table(table(CD4totssubsetpost$celltype.cnd))*100
+diff.cells <- POST-PRE
+diff.prop <- prop.post-prop.pre
+taula <- cbind(PRE,POST,diff.cells,prop.pre,prop.post,diff.prop)
+
+rownames(taula) <- c("CD8_act","CD8_eff","CD8_ex" ,"CD8_ex_act", "CD8_mem", "CD8_Naive")
+taula
+
+
+```
+
+
+
+
+# PSEUDOTIME (Monocle3)
+Anem a realitzar les proves amb el pseudotime.
+
+```{r}
+
+#CD4totssubset@meta.data$cluster_redefined <- CD4totssubset@meta.data$cluster
+
+
+```
+
+
+
+# Marcadors conservats.
+
+
+```{r include=FALSE}
+
+pre.markers <- FindAllMarkers(CD4totssubsetpre, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+post.markers <- FindAllMarkers(CD4totssubsetpost, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+tots.markers <- FindAllMarkers(CD4totssubset,only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+diff <- FindMarkers(CD4totssubset, ident.1=c("pre_CD8_Naive", "pre_CD8_mem", "pre_CD8_ex", "pre_CD8_eff", "pre_CD8_ex_act", "pre_CD8_act"), ident.2=c("post_CD8_Naive", "post_CD8_mem", "post_CD8_ex", "post_CD8_eff", "post_CD8_ex_act", "post_CD8_act"))
+
+
+Naives <- FindMarkers(CD4totssubset, ident.1="pre_CD8_Naive", ident.2="post_CD8_Naive")
+eff <-  FindMarkers(CD4totssubset, ident.1="pre_CD8_eff", ident.2="post_CD8_eff")
+act <- FindMarkers(CD4totssubset, ident.1="pre_CD8_act", ident.2="post_CD8_act")
+ex <- FindMarkers(CD4totssubset, ident.1="pre_CD8_ex", ident.2="post_CD8_ex")
+#ex_act <- FindMarkers(CD4totssubset, ident.1="pre_CD8_ex_act", ident.2="post_CD8_ex_act")
+mem <- FindMarkers(CD4totssubset, ident.1="pre_CD8_mem", ident.2="post_CD8_mem")
+
+
+
+nav <- row.names(head(Naives[order(Naives$avg_log2FC), ], n=5))
+nav2 <- row.names(head(Naives[order(-Naives$avg_log2FC), ], n=5))
+effec <- row.names(head(eff[order(eff$avg_log2FC), ], n=5))
+effec2 <- row.names(head(eff[order(-eff$avg_log2FC), ], n=5))
+activ <- row.names(head(act[order(act$avg_log2FC), ], n=5))
+activ2 <- row.names(head(act[order(-act$avg_log2FC), ], n=5))
+exhaus <- row.names(head(ex[order(ex$avg_log2FC), ], n=15))
+exhaus2 <- row.names(head(ex[order(-ex$avg_log2FC), ], n=15))
+memory <- row.names(head(mem[order(mem$avg_log2FC), ], n=5))
+memory2 <- row.names(head(mem[order(-mem$avg_log2FC), ], n=5))
+
+
+
+
+```
+
+
+
+```{r}
+
+options(max.print = 10000)
+
+pre.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top15
+DoHeatmap(CD4totssubsetpre, features = top15$gene, size=2)
+
+
+post.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 7, wt = avg_log2FC) -> top152
+DoHeatmap(CD4totssubsetpost, features = top152$gene, size=2)
+
+
+tots.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top1511
+DoHeatmap(CD4totssubset, features = top1511$gene, size=2)
+
+
+
+DoHeatmap(CD4totssubset, features=memory, group.by = "celltype.cnd")
+
+
+
+```
+
+
+
+
+
+## Anàlisis monocle3
+
+
+### Convertim objecte seurat a monocle
+Convertim l'objecte a as.celldataset mitjançant SeuratWrappers
+
+
+
+
+
+### PRE
+
+Realitzem el mateix per PRE
+
+```{r}
+
+set.seed(123)
+#CD4totssubsetpre <- subset(CD4totssubset, celltype.cnd %in% c("pre_Naive", "pre_Treg", "pre_Th17", "pre_Tfh"))
+
+#CD4totssubsetpre@reductions$umap@cell.embeddings[, 1] <- CD4totssubsetpre@reductions$umap@cell.embeddings[, 1] * -1
+
+
+CD4totssubsetpre@meta.data$cluster_redefined <- CD4totssubsetpre@meta.data$cluster
+
+
+
+
+totsCD4subsetpre <- as.cell_data_set(CD4totssubsetpre)
+
+clustertotsCD4subsetpre <-plot_cells(totsCD4subsetpre,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5) + theme(legend.position="right")
+
+
+nomstotsCD4subsetpre <- plot_cells(totsCD4subsetpre,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5)   +
+ scale_color_manual(values=c("red","blue","green", "grey", "purple", "yellow", "black", "white", "maroon", "pink")) +
+  theme(legend.position="right")
+  
+  
+#nomstotsCD4subsetpre | clustertotsCD4subsetpre
+
+totsCD4subsetpre <- cluster_cells(totsCD4subsetpre, reduction_method = "UMAP")
+
+totsCD4subsetpre <- learn_graph(totsCD4subsetpre  ,use_partition = FALSE)
+
+abanstotsCD4subsetpre <- plot_cells(totsCD4subsetpre,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_branch_points = FALSE,
+           label_leaves=FALSE,
+           group_label_size=5)
+
+
+
+
+
+#totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = "UMAP", root_cells = colnames(totsCD4subsetpre[,celltype.cnd=="pre_Naive"]))
+
+
+#BUSCAR LA ROOT
+
+
+list_cluster <- CD4totssubsetpre@active.ident
+
+totsCD4subsetpre@clusters$UMAP$clusters <- list_cluster
+
+#Posem com a root les pre_naive.
+
+totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = 'UMAP', root_cells = colnames(totsCD4subsetpre[,clusters(totsCD4subsetpre) == "pre_CD8_Naive"]))
+
+
+#totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = 'UMAP')
+
+#totsCD4 <- order_cells(totsCD4, reduction_method = "UMAP", root_cells=colnames(totsCD4[,clusters(totsCD4) %in% c("0","1")]))
+
+#clustertotsCD4subsetpre
+
+#totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = "UMAP")
+
+#install.packages("viridisLite", dependencies = TRUE)
+
+library(viridisLite)
+library(viridis)
+
+clussst <- plot_cells(totsCD4subsetpre,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5) +
+    theme(legend.position="right")
+
+
+pseudototscd4subsetpre <- plot_cells(totsCD4subsetpre,
+           color_cells_by="pseudotime",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5)
+
+
+#clustertotsCD4subsetpre | pseudototscd4subsetpre
+
+totsCD4subsetpre$monocle3_pseudotime <- pseudotime(totsCD4subsetpre)
+
+data.pseudototssubsetpre <- as.data.frame(colData(totsCD4subsetpre))
+
+cd4totalggplotpre <- ggplot(data.pseudototssubsetpre, aes(monocle3_pseudotime, reorder(celltype.cnd, monocle3_pseudotime, median), fill=celltype.cnd)) +
+  geom_boxplot()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+#### Gràfic monocle3 PRE
+
+
+```{r}
+
+clussst | pseudototscd4subsetpre
+
+cd4totalggplotpre 
+```
+
+
+### POST
+
+Realitzem el mateix per post
+
+
+```{r}
+
+set.seed(123)
+
+#CD4totssubsetpost <- subset(CD4totssubset, celltype.cnd %in% c("post_Naive", "post_Treg", "post_Th17", "post_Tfh"))
+
+CD4totssubsetpost@meta.data$cluster_redefined <- CD4totssubsetpost@meta.data$cluster
+
+#CD4totssubsetpost@reductions$umap@cell.embeddings[, 1] <- CD4totssubsetpost@reductions$umap@cell.embeddings[, 1] * -1
+
+
+
+
+
+totsCD4subsetpost <- as.cell_data_set(CD4totssubsetpost)
+
+clustertotsCD4subsetpost <-plot_cells(totsCD4subsetpost,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5) + theme(legend.position="right")
+
+
+nomstotsCD4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5)   +
+   scale_color_manual(values=c("red","blue","green", "grey", "purple", "yellow", "black", "white", "maroon", "pink")) +
+  theme(legend.position="right")
+  
+  
+#nomstotsCD4subsetpost | clustertotsCD4subsetpost
+
+totsCD4subsetpost <- cluster_cells(totsCD4subsetpost, reduction_method = "UMAP")
+
+totsCD4subsetpost <- learn_graph(totsCD4subsetpost, use_partition=FALSE) # , use_partition = FALSE
+
+abanstotsCD4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_branch_points = FALSE,
+           label_leaves=FALSE,
+           group_label_size=5)
+
+#nomstotsCD4subsetpost
+
+#totsCD4 <- order_cells(totsCD4, reduction_method = "UMAP", root_cells=colnames(totsCD4[,clusters(totsCD4) %in% c("0","1")]))
+
+
+
+list_cluster2 <- CD4totssubsetpost@active.ident
+
+totsCD4subsetpost@clusters$UMAP$clusters <- list_cluster2
+
+
+totsCD4subsetpost <- order_cells(totsCD4subsetpost, reduction_method = 'UMAP', root_cells = colnames(totsCD4subsetpost[,clusters(totsCD4subsetpost) == "post_CD8_mem"]))
+
+
+
+
+#clustertotsCD4subsetpost
+
+#totsCD4subsetpost <- order_cells(totsCD4subsetpost, reduction_method = "UMAP")
+
+asdast <- plot_cells(totsCD4subsetpost,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5,
+           trajectory_graph_segment_size = 1.2) +
+  theme(legend.position="right")
+
+pseudototscd4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="pseudotime",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5,
+           trajectory_graph_segment_size = 1.2)
+
+#clustertotsCD4subsetpost | pseudototscd4subsetpost
+
+
+
+totsCD4subsetpost$monocle3_pseudotime <- pseudotime(totsCD4subsetpost)
+
+data.pseudototssubsetpost <- as.data.frame(colData(totsCD4subsetpost))
+
+cd4totalggplotpost <- ggplot(data.pseudototssubsetpost, aes(monocle3_pseudotime, reorder(celltype.cnd, monocle3_pseudotime, median), fill=celltype.cnd)) +
+  geom_boxplot()
+
+
+
+
+
+```
+
+
+
+
+
+#### Gràfic monocle3 POST
+
+
+```{r}
+
+asdast | pseudototscd4subsetpost
+
+cd4totalggplotpost
+```
+
+
+## Mètriques  pre
+
+
+```{r include=FALSE}
+
+cds <- totsCD4subsetpre
+rowData(cds)$gene_name <- rownames(cds)
+rowData(cds)$gene_short_name <- rownames(cds)
+
+#normalized_counts(cds)
+
+#cds_subset <- choose_cells(cds)
+
+ciliated_cds_pr_test_res <- graph_test(cds, neighbor_graph="principal_graph", cores=1)
+
+cds_pt_res <- ciliated_cds_pr_test_res
+cds_pt_res <- na.omit(cds_pt_res)
+cds_pt_res <- cds_pt_res[cds_pt_res$q_value < 0.05 & cds_pt_res$status == "OK", ]
+
+
+
+library(ComplexHeatmap)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(circlize)
+library(monocle3)
+
+
+cds_pt_res[order(-cds_pt_res$morans_test_statistic),]
+
+
+best <- head(cds_pt_res[order(-cds_pt_res$morans_test_statistic),], n=100)
+
+prova <- row.names(head(best, n=40))
+
+cds_subset <- cds[rowData(cds)$gene_short_name %in% prova,]
+
+
+pt.matrix <- exprs(cds)[match(prova,rownames(rowData(cds))),order(pseudotime(cds))]
+
+
+pseudos <- sort(t(as.matrix(pseudotime(cds))))
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(pseudos,y=x,df=3)$y}))
+
+#pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x,df=3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x-mean(x))/sd(x)}))
+rownames(pt.matrix) <- prova;
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km = 6,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows = "ward.D2",
+  clustering_method_columns = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+
+
+
+```
+
+## Genes in pseudotime pre
+
+```{r}
+
+plot_genes_violin(cds_subset, group_cells_by="celltype.cnd", ncol=5)
+plot_genes_in_pseudotime(cds_subset, color_cells_by="celltype.cnd", min_expr=0.0005, ncol=5)
+```
+
+## Heatmap module tpre
+
+```{r eval=FALSE, include=FALSE}
+
+cds <- preprocess_cds(cds, num_dim = 100)
+
+adsda <- rownames(cds_pt_res)
+gene_module_df <- find_gene_modules(cds[adsda,], resolution=0.0000001) 
+
+
+
+
+cell_group_df <- tibble::tibble(cell=row.names(colData(cds)),
+                                cell_group=clusters(cds)[colnames(cds)])
+agg_mat <- aggregate_gene_expression(cds, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+colnames(agg_mat) <- stringr::str_c("Cluster ", colnames(agg_mat))
+
+pheatmap::pheatmap(agg_mat, cluster_rows=TRUE, cluster_cols=TRUE,
+                   scale="column", clustering_method="ward.D2",
+                   fontsize=6)
+
+
+```
+
+
+
+
+
+
+```{r}
+#print(htkm)
+#print(hthc)
+```
+
+
+```{r}
+
+plot_cells(cds,
+           genes=row.names(best),
+           show_trajectory_graph=FALSE,
+           label_cell_groups=FALSE,
+           label_leaves=FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Post
+
+```{r include=FALSE}
+
+cds2 <- totsCD4subsetpost
+rowData(cds2)$gene_name <- rownames(cds2)
+rowData(cds2)$gene_short_name <- rownames(cds2)
+
+#normalized_counts(cds)
+
+ciliated_cds_pr_test_res2 <- graph_test(cds2, neighbor_graph="principal_graph", cores=1)
+
+cds_pt_res2 <- ciliated_cds_pr_test_res2
+cds_pt_res2 <- na.omit(cds_pt_res2)
+cds_pt_res2 <- cds_pt_res2[cds_pt_res2$q_value < 0.05 & cds_pt_res2$status == "OK", ]
+cds_pt_res2
+
+
+
+
+cds_pt_res2[order(-cds_pt_res2$morans_test_statistic),]
+
+
+best2 <- head(cds_pt_res2[order(-cds_pt_res2$morans_test_statistic),], n=100)
+
+prova2 <- row.names(head(best2, n=40))
+
+cds_subset <- cds2[rowData(cds2)$gene_short_name %in% prova2,]
+
+
+
+
+
+pt.matrix2 <- exprs(cds2)[match(prova2,rownames(rowData(cds2))),order(pseudotime(cds2))]
+
+
+pseudos2 <- sort(t(as.matrix(pseudotime(cds2))))
+pt.matrix <- t(apply(pt.matrix2,1,function(x){smooth.spline(pseudos2,y=x,df=3)$y}))
+
+#pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x,df=3)$y}))
+pt.matrix2 <- t(apply(pt.matrix2,1,function(x){(x-mean(x))/sd(x)}))
+rownames(pt.matrix2) <- prova2;
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix2,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km = 6,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+hthc <- Heatmap(
+  pt.matrix2,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows = "ward.D2",
+  clustering_method_columns = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+
+
+
+
+
+
+
+
+#plot_cells(cds,
+         #  genes=c("FOXP3", "HSP90AA1", "UBC", "IL32", "STMN1", "KLRB1"),
+        #   show_trajectory_graph=FALSE,
+        #   label_cell_groups=FALSE,
+          # label_leaves=FALSE)
+
+
+```
+
+## Genes in pseudotime post
+
+
+```{r}
+plot_genes_violin(cds_subset, group_cells_by="celltype.cnd", ncol=5)
+plot_genes_in_pseudotime(cds_subset, color_cells_by="celltype.cnd", min_expr=0.0005, ncol=5)
+```
+
+
+## Heatmap modules post
+
+```{r eval=FALSE, include=FALSE}
+
+cds2 <- preprocess_cds(cds2, num_dim = 100)
+
+adsda <- rownames(cds_pt_res2)
+gene_module_df <- find_gene_modules(cds2[adsda,], resolution=0.0000001) 
+
+
+
+
+cell_group_df <- tibble::tibble(cell=row.names(colData(cds2)),
+                                cell_group=clusters(cds2)[colnames(cds2)])
+agg_mat <- aggregate_gene_expression(cds2, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+colnames(agg_mat) <- stringr::str_c("Cluster ", colnames(agg_mat))
+
+pheatmap::pheatmap(agg_mat, cluster_rows=TRUE, cluster_cols=TRUE,
+                   scale="column", clustering_method="ward.D2",
+                   fontsize=6)
+
+
+```
+
+
+
+```{r}
+#print(htkm)
+#print(hthc)
+```
+
+
+```{r}
+#genssss <- c("CTSH", "RGCC", "LRRN3", "SMIM3")
+plot_cells(cds2,
+           genes=row.names(best),
+           show_trajectory_graph=FALSE,
+           label_cell_groups=FALSE,
+           label_leaves=FALSE)
+```
+
+
+
+
+
+
+
+# Segons els marcadors
+
+```{r}
+
+CD4totssubsetpre@meta.data$monocle3_pseudotime <- pseudotime(totsCD4subsetpre)
+CD4totssubsetpost@meta.data$monocle3_pseudotime <- pseudotime(totsCD4subsetpost)
+
+library(ComplexHeatmap)
+
+library(magick)
+
+
+dittoHeatmap(CD4totssubsetpre, top15$gene, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by= "celltype.cnd", scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+dittoHeatmap(CD4totssubsetpost, top152$gene, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by= "celltype.cnd", scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+
+
+```
+
+
+## Segons els gens més expressats
+
+```{r}
+
+dittoHeatmap(CD4totssubsetpre, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c("monocle3_pseudotime", "celltype.cnd"), scaled.to.max = FALSE, show_colnames = FALSE)  
+
+
+dittoHeatmap(CD4totssubsetpost, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c(  "monocle3_pseudotime", "celltype.cnd"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+
+dittoHeatmap(CD4totssubsetpre, prova2, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "celltype.cnd", "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+dittoHeatmap(CD4totssubsetpost, prova2, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "celltype.cnd", "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+
+```
+
+
+
+
+
+
+
+### Enrichment HALLMARK PRE
+
+
+
+```{r}
+
+
+
+H <- msigdbr(species = "Homo sapiens", category="H")
+
+
+
+#tres <- best
+#sig.gene <- bitr(genelist, 
+ #               fromType="ALIAS", 
+  #               toType = "ENTREZID",
+   #               OrgDb = org.Hs.eg.db) 
+
+
+
+
+
+sig.gene <- bitr(rownames(cds_pt_res), 
+                fromType="ALIAS", 
+                 toType = "ENTREZID",
+                  OrgDb = org.Hs.eg.db) 
+
+
+entrezz <- sig.gene$ENTREZID
+
+H.entrez <- dplyr::select(H, gs_name, entrez_gene)
+
+
+enrich.H <- enricher(gene=entrezz, TERM2GENE=H.entrez)
+
+
+enrich.H.df <- enrich.H@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.H.df %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description=gsub("HALLMARK_", "", Description),
+         Description=gsub("_", " ", Description)) %>%
+  
+  ggplot(aes(x=reorder(Description, K.k),
+             y=K.k))+
+  geom_col() +
+  theme_classic() +
+  coord_flip() + 
+  labs(y="Significant genes in set / Total genes in set \nk/K",
+       x="Gene set",
+       title="Significant genes enricher in Hallmark gene sets")
+
+
+
+```
+
+
+### Enrichment HALLMARK POST
+
+
+```{r}
+
+
+
+
+sig.gene2 <- bitr(rownames(cds_pt_res2), 
+                fromType="ALIAS", 
+                 toType = "ENTREZID",
+                  OrgDb = org.Hs.eg.db) 
+
+
+entrezz2 <- sig.gene2$ENTREZID
+
+H.entrez <- dplyr::select(H, gs_name, entrez_gene)
+
+
+enrich.H2 <- enricher(gene=entrezz2, TERM2GENE=H.entrez)
+
+
+enrich.H.df2 <- enrich.H2@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.H.df2 %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description=gsub("HALLMARK_", "", Description),
+         Description=gsub("_", " ", Description)) %>%
+  
+  ggplot(aes(x=reorder(Description, K.k),
+             y=K.k))+
+  geom_col() +
+  theme_classic() +
+  coord_flip() + 
+  labs(y="Significant genes in set / Total genes in set \nk/K",
+       x="Gene set",
+       title="Significant genes enricher in Hallmark gene sets")
+
+
+
+```
+
+
+
+#### Comparació
+
+```{r}
+plot(barplot(enrich.H, showCategory=15))
+plot(barplot(enrich.H2, showCategory=15))
+
+```
+
+
+### Diferències
+
+
+```{r}
+
+enrich.H.dffinal <- subset(enrich.H.df, qvalue <= 0.05)
+enrich.H.dffinal2 <- subset(enrich.H.df2, qvalue <= 0.05)
+
+
+
+A <- rownames(enrich.H.dffinal)
+B <- rownames(enrich.H.dffinal2)
+
+
+
+#A %in% B
+#intersect(A,B)
+setdiff(A,B)
+setdiff(B,A)
+
+
+
+
+```
+
+
+
+
+# Immune
+
+```{r}
+
+
+best <- head(cds_pt_res[order(-cds_pt_res$morans_test_statistic),], n=5000)
+best2 <- head(cds_pt_res2[order(-cds_pt_res2$morans_test_statistic),], n=5000)
+
+sig.gene2post <- bitr(rownames(best2), 
+                fromType="ALIAS", 
+                 toType = "ENTREZID",
+                  OrgDb = org.Hs.eg.db) 
+sig.gene2pre <- bitr(rownames(best), 
+                fromType="ALIAS", 
+                 toType = "ENTREZID",
+                  OrgDb = org.Hs.eg.db) 
+
+entrezz2pre <- sig.gene2pre$ENTREZID
+entrezz2post <- sig.gene2post$ENTREZID
+
+interseccio2 <- intersect(entrezz2pre,entrezz2post)
+depre2 <- setdiff(entrezz2pre,entrezz2post)
+depost2 <- setdiff(entrezz2post,entrezz2pre)
+
+enrich_gene_list_for_test <- list("pre"=depre2, "pre + post"=interseccio2, "post"=depost2)
+
+test_enrich2 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  ont           = "BP",
+                                  OrgDb = org.Hs.eg.db,
+                                  pAdjustMethod = "BH",
+                                  pvalueCutoff  = 0.01,
+                                  qvalueCutoff  = 0.05,
+                                 fun =  enrichGO)
+test_enrich22 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  ont           = "BP",
+                                  OrgDb = org.Hs.eg.db,
+                                  
+                                 fun =  groupGO)
+
+test_enrich <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  pAdjustMethod = "BH",
+                                  pvalueCutoff  = 0.01,
+                                  qvalueCutoff  = 0.05,
+                                 fun =  "enrichPathway")
+
+test_kegg <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                            
+                                  pvalueCutoff  = 0.01,
+                                 qvalueCutoff  = 0.05,
+                                  fun =  "enrichDO")
+
+
+
+dotplot(test_kegg ,label_format = 100 ,showCategory=20, font.size=8)
+
+#dotplot(test_enrich22,label_format = 100 ,showCategory=20, font.size=8)
+dotplot(test_enrich,label_format = 100 ,showCategory=20, font.size=8)
+dotplot(test_enrich2, label_format=100, showCategory=20, font.size=8)
+
+
+
+xx <- pairwise_termsim(test_kegg)
+xx1 <- pairwise_termsim(test_enrich2)
+
+cnetplot(test_enrich)
+emapplot(xx1)
+
+
+
+
+
+provaaaa <- list("pre"=depre,"post"=depost)
+
+reactome <- compareCluster(geneCluster=depost, fun="enrichPathway")
+
+
+enrich_gene_list_for_test <- list("pre"=entrezz, "post"=entrezz2)
+test_enrich <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  ont           = "BP",
+                                  OrgDb = org.Hs.eg.db,
+                                  pAdjustMethod = "BH",
+                                  pvalueCutoff  = 0.01,
+                                  qvalueCutoff  = 0.05,
+                                 fun =  enrichGO)
+
+
+dotplot(test_enrich,label_format = 100 ,showCategory=100, font.size=8)
+
+
+test_kegg <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                               organism = "hsa",
+                                  pvalueCutoff  = 0.01,
+                                 qvalueCutoff  = 0.05,
+                                  fun =  enrichKEGG)
+
+dotplot(test_kegg ,label_format = 100 ,showCategory=20, font.size=8)
+
+
+
+Imm <- msigdbr(species = "Homo sapiens", category="C7")
+
+
+Imm.entrez <- dplyr::select(Imm, gs_name, entrez_gene)
+
+
+enrich.Imm2 <- enricher(gene=entrezz2, TERM2GENE=Imm.entrez)
+
+
+enrich.Imm.df2 <- enrich.Imm2@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.Imm.df2 %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description = gsub("HALLMARK_", "", Description),
+         Description = gsub("_", " ", Description)) %>%
+  arrange(desc(K.k)) %>%
+  slice(1:20) %>%
+  ggplot(aes(x = reorder(Description, K.k),
+             y = K.k)) +
+  geom_col() +
+  theme_classic() +
+  coord_flip() +
+  labs(y = "Significant genes in set / Total genes in set \nk/K",
+       x = "Gene set",
+       title = "Significant genes enriched in Hallmark gene sets")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+enrich.Imm <- enricher(gene=entrezz, TERM2GENE=Imm.entrez)
+
+
+enrich.Imm.df <- enrich.Imm@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.Imm.df %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description = gsub("HALLMARK_", "", Description),
+         Description = gsub("_", " ", Description)) %>%
+  arrange(desc(K.k)) %>%
+  slice(1:20) %>%
+  ggplot(aes(x = reorder(Description, K.k),
+             y = K.k)) +
+  geom_col() +
+  theme_classic() +
+  coord_flip() +
+  labs(y = "Significant genes in set / Total genes in set \nk/K",
+       x = "Gene set",
+       title = "Significant genes enriched in Hallmark gene sets")
+
+
+
+enrich.Imm.dffinal <- subset(enrich.Imm.df, qvalue <= 0.05)
+enrich.Imm.dffinal2 <- subset(enrich.Imm.df2, qvalue <= 0.05)
+
+
+
+A <- rownames(enrich.Imm.dffinal)
+B <- rownames(enrich.Imm.dffinal2)
+
+
+
+#A %in% B
+#intersect(A,B)
+setdiff(A,B)
+setdiff(B,A)
+
+#Pre
+
+plot(barplot(enrich.Imm, showCategory=15))
+
+#Post
+plot(barplot(enrich.Imm2, showCategory=15))
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+## Reactome C2
+
+
+```{r}
+
+
+Imm <- msigdbr(species = "Homo sapiens", category="C2")
+
+
+Imm.entrez <- dplyr::select(Imm, gs_name, entrez_gene)
+
+
+enrich.Imm2 <- enricher(gene=entrezz2, TERM2GENE=Imm.entrez)
+
+
+enrich.Imm.df2 <- enrich.Imm2@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.Imm.df2 %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description = gsub("HALLMARK_", "", Description),
+         Description = gsub("_", " ", Description)) %>%
+  arrange(desc(K.k)) %>%
+  slice(1:20) %>%
+  ggplot(aes(x = reorder(Description, K.k),
+             y = K.k)) +
+  geom_col() +
+  theme_classic() +
+  coord_flip() +
+  labs(y = "Significant genes in set / Total genes in set \nk/K",
+       x = "Gene set",
+       title = "Significant genes enriched in Hallmark gene sets")
+
+
+
+```
+
+
+
+
+
+```{r}
+
+enrich.Imm <- enricher(gene=entrezz, TERM2GENE=Imm.entrez)
+
+
+enrich.Imm.df <- enrich.Imm@result %>%
+  separate(BgRatio, into=c("size.term", "size.category"), sep="/") %>% 
+  separate(GeneRatio, into=c("size.overlap.term","size.overlap.category" ), sep="/") %>%
+  mutate_at(vars("size.term", "size.category", "size.overlap.term", "size.overlap.category"), as.numeric) %>%
+  mutate("K.k"=size.overlap.term/size.term)
+
+
+
+ #Visualitzem els resultats
+
+enrich.Imm.df %>%
+  dplyr::filter(p.adjust <= 0.05) %>%
+  mutate(Description = gsub("HALLMARK_", "", Description),
+         Description = gsub("_", " ", Description)) %>%
+  arrange(desc(K.k)) %>%
+  slice(1:20) %>%
+  ggplot(aes(x = reorder(Description, K.k),
+             y = K.k)) +
+  geom_col() +
+  theme_classic() +
+  coord_flip() +
+  labs(y = "Significant genes in set / Total genes in set \nk/K",
+       x = "Gene set",
+       title = "Significant genes enriched in Hallmark gene sets")
+
+
+
+enrich.Imm.dffinal <- subset(enrich.Imm.df, qvalue <= 0.05)
+enrich.Imm.dffinal2 <- subset(enrich.Imm.df2, qvalue <= 0.05)
+
+
+
+enrich.Imm.df50111 <- enrich.Imm %>% 
+  arrange(qvalue) %>% 
+  head(50)
+
+
+
+
+enrich.Imm.df50 <- enrich.Imm.df %>% 
+  arrange(qvalue) %>% 
+  head(50)
+
+enrich.Imm.df250 <- enrich.Imm.df2 %>% 
+  arrange(qvalue) %>% 
+  head(50)
+library(enrichplot)
+
+library(europepmc)
+
+
+
+
+A <- rownames(enrich.Imm.df50)
+B <- rownames(enrich.Imm.df250)
+
+
+
+#A %in% B
+#intersect(A,B)
+setdiff(A,B)
+setdiff(B,A)
+
+#Pre
+
+plot(barplot(enrich.Imm, showCategory=15))
+
+#Post
+plot(barplot(enrich.Imm2, showCategory=15))
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+## Pre + Post
+
+Realitzem el mateix per post
+
+
+```{r}
+
+set.seed(123)
+
+
+#CD4totssubsetpost <- subset(CD4totssubset, celltype.cnd %in% c("post_Naive", "post_Treg", "post_Th17", "post_Tfh"))
+
+CD4totssubset@meta.data$cluster_redefined <- CD4totssubset@meta.data$cluster
+
+#CD4totssubsetpost@reductions$umap@cell.embeddings[, 1] <- CD4totssubsetpost@reductions$umap@cell.embeddings[, 1] * -1
+
+CD4totssubsetpost <- CD4totssubset
+
+
+
+totsCD4subsetpost <- as.cell_data_set(CD4totssubsetpost)
+
+clustertotsCD4subsetpost <-plot_cells(totsCD4subsetpost,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5) + theme(legend.position="right")
+
+
+nomstotsCD4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           group_label_size=5)   +
+   scale_color_manual(values=c("red","blue","green", "grey", "purple", "yellow", "black", "white", "maroon", "pink")) +
+  theme(legend.position="right")
+  
+  
+#nomstotsCD4subsetpost | clustertotsCD4subsetpost
+
+totsCD4subsetpost <- cluster_cells(totsCD4subsetpost, reduction_method = "UMAP")
+
+totsCD4subsetpost <- learn_graph(totsCD4subsetpost) #use_partition=FALSE) # , use_partition = FALSE
+
+abanstotsCD4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="cluster_redefined",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_branch_points = FALSE,
+           label_leaves=FALSE,
+           group_label_size=5)
+
+#nomstotsCD4subsetpost
+
+#totsCD4 <- order_cells(totsCD4, reduction_method = "UMAP", root_cells=colnames(totsCD4[,clusters(totsCD4) %in% c("0","1")]))
+
+
+
+list_cluster2 <- CD4totssubsetpost@active.ident
+
+totsCD4subsetpost@clusters$UMAP$clusters <- list_cluster2
+
+
+totsCD4subsetpost <- order_cells(totsCD4subsetpost, reduction_method = 'UMAP', root_cells = colnames(totsCD4subsetpost[,clusters(totsCD4subsetpost) == "pre_CD8_Naive"]))
+
+
+
+
+#clustertotsCD4subsetpost
+
+#totsCD4subsetpost <- order_cells(totsCD4subsetpost, reduction_method = "UMAP")
+
+
+tresses <- plot_cells(totsCD4subsetpost,
+           color_cells_by="celltype.cnd",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5,
+           trajectory_graph_segment_size = 1.2) + theme(legend.position="right")
+
+pseudototscd4subsetpost <- plot_cells(totsCD4subsetpost,
+           color_cells_by="pseudotime",
+           label_groups_by_cluster=FALSE,
+           label_roots=FALSE,
+           label_leaves=FALSE,
+           group_label_size=5,
+           trajectory_graph_segment_size = 1.2)
+
+#clustertotsCD4subsetpost | pseudototscd4subsetpost
+
+
+
+totsCD4subsetpost$monocle3_pseudotime <- pseudotime(totsCD4subsetpost)
+
+data.pseudototssubsetpost <- as.data.frame(colData(totsCD4subsetpost))
+
+cd4totalggplotpost <- ggplot(data.pseudototssubsetpost, aes(monocle3_pseudotime, reorder(celltype.cnd, monocle3_pseudotime, median), fill=celltype.cnd)) +
+  geom_boxplot()
+
+cd4totalggplotpostcluster <- ggplot(data.pseudototssubsetpost, aes(monocle3_pseudotime, reorder(cluster, monocle3_pseudotime, median), fill=cluster)) +
+  geom_boxplot()
+
+
+
+```
+
+
+
+
+
+#### Gràfic monocle3 Pre + Post
+
+
+```{r}
+
+#abanstotsCD4subsetpost | pseudototscd4subsetpost
+tresses | pseudototscd4subsetpost
+
+cd4totalggplotpost
+cd4totalggplotpostcluster
+
+
+
+
+```
+
+
+
+
+
+
+
+## Mètriques  total
+
+
+```{r include=FALSE}
+
+cds <- totsCD4subsetpost
+rowData(cds)$gene_name <- rownames(cds)
+rowData(cds)$gene_short_name <- rownames(cds)
+
+#normalized_counts(cds)
+
+#cds_subset <- choose_cells(cds)
+
+ciliated_cds_pr_test_res <- graph_test(cds, neighbor_graph="principal_graph", cores=1)
+
+cds_pt_res <- ciliated_cds_pr_test_res
+cds_pt_res <- na.omit(cds_pt_res)
+cds_pt_res <- cds_pt_res[cds_pt_res$q_value < 0.05 & cds_pt_res$status == "OK", ]
+
+
+
+library(ComplexHeatmap)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(circlize)
+library(monocle3)
+
+
+cds_pt_res[order(-cds_pt_res$morans_test_statistic),]
+
+
+best <- head(cds_pt_res[order(-cds_pt_res$morans_test_statistic),], n=100)
+
+prova <- row.names(head(best, n=40))
+
+cds_subset <- cds[rowData(cds)$gene_short_name %in% prova,]
+
+
+pt.matrix <- exprs(cds)[match(prova,rownames(rowData(cds))),order(pseudotime(cds))]
+
+
+pseudos <- sort(t(as.matrix(pseudotime(cds))))
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(pseudos,y=x,df=3)$y}))
+
+#pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x,df=3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x-mean(x))/sd(x)}))
+rownames(pt.matrix) <- prova;
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km = 6,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = colorRamp2(seq(from=-2,to=2,length=11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = TRUE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows = "ward.D2",
+  clustering_method_columns = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = TRUE,
+  cluster_columns              = TRUE)
+
+
+
+
+```
+
+## Genes in pseudotime total
+
+```{r}
+
+
+prova111 <- row.names(head(best, n=9))
+
+cds_subset <- cds[rowData(cds)$gene_short_name %in% prova111,]
+
+plot_genes_violin(cds_subset, group_cells_by="celltype.cnd", ncol=3)
+plot_genes_in_pseudotime(cds_subset, color_cells_by="celltype.cnd", min_expr=0.0005, ncol=3)
+
+
+
+```
+
+## Heatmap module total
+
+```{r eval=FALSE, include=FALSE}
+
+cds <- preprocess_cds(cds, num_dim = 100)
+
+adsda <- rownames(cds_pt_res)
+gene_module_df <- find_gene_modules(cds[adsda,], resolution=0.0000001) 
+
+
+
+
+cell_group_df <- tibble::tibble(cell=row.names(colData(cds)),
+                                cell_group=clusters(cds)[colnames(cds)])
+agg_mat <- aggregate_gene_expression(cds, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+colnames(agg_mat) <- stringr::str_c("Cluster ", colnames(agg_mat))
+
+pheatmap::pheatmap(agg_mat, cluster_rows=TRUE, cluster_cols=TRUE,
+                   scale="column", clustering_method="ward.D2",
+                   fontsize=6)
+
+
+```
+
+
+
+
+
+
+```{r}
+#print(htkm)
+#print(hthc)
+```
+
+
+```{r}
+
+plot_cells(cds,
+           genes=row.names(best),
+           show_trajectory_graph=FALSE,
+           label_cell_groups=FALSE,
+           label_leaves=FALSE)
+
+```
+
+
+
+# Segons els gens més expressats
+
+```{r}
+
+CD4totssubsetpost@meta.data$monocle3_pseudotime <- pseudotime(totsCD4subsetpost)
+
+
+#dittoHeatmap(CD4totssubsetpre, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "celltype.cnd", "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+dittoHeatmap(CD4totssubsetpost, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "celltype.cnd", "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+dittoHeatmap(CD4totssubsetpost, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "monocle3_pseudotime",  "celltype.cnd"), scaled.to.max = FALSE, show_colnames = FALSE)
+dittoHeatmap(CD4totssubsetpost, prova, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+# Crear un dataframe con una sola columna
+exhhh <- data.frame(Col1 = c(exhaus, exhaus2))
+
+# POSSIBLE MILLORA o que a fer-ho xulo
+nansad <- subset(CD4totssubsetpost, celltype.cnd %in% c("pre_CD8_ex", "post_CD8_ex"))
+
+dittoHeatmap(nansad, exhhh$Col1, annot.by = c("celltype.cnd", "monocle3_pseudotime"), order.by=c( "monocle3_pseudotime"), scaled.to.max = FALSE, show_colnames = FALSE)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
