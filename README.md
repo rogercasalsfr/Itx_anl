@@ -1,4 +1,4 @@
-**Master thesis**
+**Immunotherapy trajectory inference**
 
 The main goal of this project is to discern immune cell trajectories and gene regulatory networks within a tumor microenvironment. The project's efficacy is under assessment. Another aim is to identify differentially expressed genes to delineate the trajectories and conduct enrichment analysis.
 
