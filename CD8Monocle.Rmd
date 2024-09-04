@@ -45,7 +45,7 @@ library(org.Hs.eg.db)
 ```
 
 
-# Llegim els objectes Seurat
+# Read Seurat Objects
 
 ```{r include=FALSE}
 CD4totssubset <- LoadH5Seurat("totscd8.h5Seurat")
