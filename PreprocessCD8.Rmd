@@ -7,15 +7,16 @@ output: html_document
 
 
 
-
- Primer de tot, carreguem les dades. Del SCC
+Load the data from SCC
 
 # Squamos cell carcionma 
 
 ```{r}
-
+# Set working directory
 #setwd("C:/Users/Roger Casals/OneDrive/Escriptori/UOC ROGER/2n semestre/TFM/Final 5_5")
 setwd("C:/Users/Natàlia/Desktop/UOC ROGER/2n semestre/TFM/Primera prova")
+
+# Load metadata and counts
 metadata2 <- data.table::fread("GSE123813_scc_metadata.txt.gz")
 expression_data <- read.table("GSE123813_scc_scRNA_counts.txt.gz", header=TRUE, row.names=1, sep="\t", check.names=FALSE)
 
@@ -23,24 +24,20 @@ expression_data <- read.table("GSE123813_scc_scRNA_counts.txt.gz", header=TRUE, 
 
 
 
-## Càrrega de llibreries
+## Load libraries
 
-Carreguem les diferents llibreries
 
 ```{r}
 library(Seurat)
 library(SeuratWrappers)
 library(monocle3)
-#library(slingshot)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(dyno)
 library(tidyverse)
 library(dynwrap)
-#library(celldex)
 library(SingleCellExperiment)
-#library(SingleR)
 library(dyneval)
 
 ```
@@ -48,9 +45,9 @@ library(dyneval)
 
 
 
-## Preprocessament amb Seurat
+## Preprocessing using Seurat
 
-### Objecte Seurat
+### Seurat object
 
 ```{r}
 
@@ -61,7 +58,7 @@ bbb <- aa
 
 
 
-#Ordenem les dades per tal d'obtenir les identificacions correctes.
+# Sort metadata
 
 metadata2 <- metadata2[order(metadata2$cell.id),]
 aa <- aa[, order(colnames(aa))]
@@ -74,7 +71,7 @@ aa@meta.data <- aa@meta.data[order(row.names(aa@meta.data)), ]
 
 
 
-### Afegim metadata a Seurat
+### Add metadata to Seurat
 
 ```{r}
 
@@ -89,17 +86,11 @@ table(aa@meta.data$cluster)
 
 
 
-ENS CENTRAREM AMB LES CD4 perquè hem vist a la teoria que les "naive" es poden diferenciar en Treg o Th17 o Tfh
-
-
-### Passos preprocessament amb Seurat
-
-
-#### Control de qualitat
+#### Quality Control (QC)
 
 ```{r}
 
-#Obtenim els percentatges de gens mitocontrials i ribosòmics, per saber si les cèl·lules estan estressades.
+#Obtain mitochondrial and ribosomal percentages.
 aa <- PercentageFeatureSet(aa, "^MT-", col.name="percent_mito")
 aa <- PercentageFeatureSet(aa, "^RP[SL]", col.name = "percent_ribo")
 aa <- PercentageFeatureSet(aa, "^HB[^(P)]", col.name = "percent_hb")
@@ -135,7 +126,7 @@ CD4tots <- subset(CD4tots, subset=nFeature_RNA < 4000 & percent_mito < 8 )
 table(CD4tots@meta.data$cluster)
 
 
-#Normalitzem les dades
+#Normalize the data
 CD4tots <- NormalizeData(CD4tots)
 
 #Busquem els gens que contribueixen més significativament a la variabilitat d'una matriu d'expressió gènica.
