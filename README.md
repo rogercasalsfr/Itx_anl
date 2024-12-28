@@ -5,3 +5,5 @@ The main goal of this project is to discern immune cell trajectories and gene re
 The data utilized was sourced from the GSE123813 repository, exclusively employing samples from SCC patients. The data is from "pre" and "post" immunotherapy treatment
 
 The code is housed in a folder and encompasses the preprocessing steps integral to the Seurat workflow. A comparative analysis is conducted on the trajectory inference methods of Dynverse and Monocle3. Enrichment analysis is carried out using ClusterProfiler, integrated into the Monocle3 files.
+
+![image](https://github.com/user-attachments/assets/f7cf5462-edfe-4052-b075-171cc6faeee6)
