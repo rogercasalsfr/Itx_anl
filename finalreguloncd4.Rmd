@@ -1,0 +1,943 @@
+---
+title: "finalreguloncd4"
+author: "Roger Casals"
+date: "2024-11-05"
+output: html_document
+---
+
+
+# Build functions
+
+```{r}
+
+analyze_expression <- function(cluster_anno_sorted, allreg, pattern) {
+  # Step 1: Identify pre, post, and combined groups based on the pattern
+  pre_group <- names(cluster_anno_sorted)[grep(paste0("^pre_", pattern, "$"), cluster_anno_sorted)]
+  post_group <- names(cluster_anno_sorted)[grep(paste0("^post_", pattern, "$"), cluster_anno_sorted)]
+  combined_group <- names(cluster_anno_sorted)[grep(paste0("^(pre_|post_)", pattern, "$"), cluster_anno_sorted)]
+  
+  # Step 2: Create matrices for the pre, post, and combined groups
+  mat_combined <- t(t(allreg)[, combined_group])
+  mat_pre <- t(t(allreg)[, pre_group])
+  mat_post <- t(t(allreg)[, post_group])
+  
+  # Step 3: Calculate mean and log2 fold change
+  mean_pre <- colMeans(mat_pre)
+  mean_post <- colMeans(mat_post)
+  log2_fold_change <- mean_pre - mean_post
+  
+  # Step 4: Identify top upregulated and downregulated regulons
+  upregulated <- head(sort(log2_fold_change), 150)
+  downregulated <- -head(sort(-log2_fold_change), 150)
+  
+  # Step 5: Filter matrices to include only top upregulated and downregulated regulons
+  mat_pre_filtered <- mat_pre[, colnames(mat_pre) %in% c(names(upregulated), names(downregulated))]
+  mat_post_filtered <- mat_post[, colnames(mat_post) %in% c(names(upregulated), names(downregulated))]
+  
+  # Step 6: Perform t-tests for each regulon and adjust p-values
+  p_values <- numeric(ncol(mat_pre_filtered))
+  for (i in 1:ncol(mat_pre_filtered)) {
+    # Compare means of regulon expression in "pre" vs "post"
+    t_test_results <- t.test(mat_pre_filtered[, i], mat_post_filtered[, i])
+    p_values[i] <- t_test_results$p.value
+  }
+  p_values_adjusted <- p.adjust(p_values, method = "BH")
+  
+  # Step 7: Create the final dataframe with results
+  cambi <- c(upregulated, downregulated)
+  log10_p <- -log10(p_values_adjusted)
+  
+  df <- data.frame(
+    regulon = names(cambi),
+    log2_fold_change = cambi,
+    p_value = p_values,
+    p_value_adjusted = p_values_adjusted,
+    log10_p = log10_p
+  )
+  
+  # Filter significant regulons based on fold change and adjusted p-value threshold
+  significant_regulons <- subset(df, abs(log2_fold_change) > 0.5 & p_value_adjusted < 0.05)
+  
+  # Return the dataframe of significant regulons
+  return(significant_regulons)
+}
+
+
+# Define the function
+compare_pre_post_conditions <- function(seurat_obj, allreg, pattern, cluster_ids) {
+  # Step 1: Subset the Seurat object based on specified clusters
+  subset_obj <- subset(seurat_obj, seurat_clusters %in% cluster_ids)
+  
+  # Step 2: Identify pre and post groups based on the pattern
+  pre_group <- rownames(subset_obj@meta.data)[grep(paste0("^pre_", pattern, "$"), subset_obj@meta.data$celltype.cnd)]
+  post_group <- rownames(subset_obj@meta.data)[grep(paste0("^post_", pattern, "$"), subset_obj@meta.data$celltype.cnd)]
+  combined_group <- rownames(subset_obj@meta.data)[grep(paste0("^(pre_|post_)", pattern, "$"), subset_obj@meta.data$celltype.cnd)]
+  
+  # Step 3: Create matrices for the pre, post, and combined groups from allreg
+  mat_combined <- t(t(allreg)[, combined_group])
+  mat_pre <- t(t(allreg)[, pre_group])
+  mat_post <- t(t(allreg)[, post_group])
+  
+  # Step 4: Calculate mean and log2 fold change
+  mean_pre <- colMeans(mat_pre)
+  mean_post <- colMeans(mat_post)
+  log2_fold_change <- mean_pre - mean_post
+  
+  # Step 5: Identify top upregulated and downregulated regulons
+  upregulated <- head(sort(log2_fold_change), 150)
+  downregulated <- -head(sort(-log2_fold_change), 150)
+  
+  # Step 6: Filter matrices to include only top upregulated and downregulated regulons
+  mat_pre_filtered <- mat_pre[, colnames(mat_pre) %in% c(names(upregulated), names(downregulated))]
+  mat_post_filtered <- mat_post[, colnames(mat_post) %in% c(names(upregulated), names(downregulated))]
+  
+  # Step 7: Perform t-tests for each regulon and adjust p-values
+  p_values <- numeric(ncol(mat_pre_filtered))
+  for (i in 1:ncol(mat_pre_filtered)) {
+    # Check for constant data to avoid errors in t-test
+    if (var(mat_pre_filtered[, i]) == 0 && var(mat_post_filtered[, i]) == 0) {
+      p_values[i] <- NA
+    } else {
+      # Perform t-test between pre and post groups
+      t_test_results <- t.test(mat_pre_filtered[, i], mat_post_filtered[, i])
+      p_values[i] <- t_test_results$p.value
+    }
+  }
+  p_values_adjusted <- p.adjust(p_values, method = "BH")  # Use Benjamini-Hochberg for multiple testing
+  
+  # Step 8: Create the final dataframe with results
+  cambi <- c(upregulated, downregulated)
+  log10_p <- -log10(p_values_adjusted)
+  
+  df <- data.frame(
+    regulon = names(cambi),
+    log2_fold_change = cambi,
+    p_value = p_values,
+    p_value_adjusted = p_values_adjusted,
+    log10_p = log10_p
+  )
+  
+  # Filter significant regulons based on fold change and adjusted p-value threshold
+  significant_regulons <- subset(df, abs(log2_fold_change) > 0.5 & p_value_adjusted < 0.05)
+  
+  # Return the dataframe of significant regulons
+  return(significant_regulons)
+}
+
+
+
+generate_heatmap <- function(allreg, cluster_anno_sorted, CD4totssubset, significant_results, pattern, col_fun) {
+  # Step 1: Identify cells related to the specified pattern (e.g., "Treg") in `cluster_anno_sorted`
+  treg <- names(cluster_anno_sorted)[grep(paste0("^(pre_|post_)", pattern, "$"), cluster_anno_sorted)]  
+
+  # Step 2: Prepare matrix for the specified T-cell subset
+  mat_treg <- t(t(allreg)[, treg])
+  
+  # Step 3: Use the names of significant results as `prova` for regulon filtering
+  prova <- significant_results$regulon  # Assuming `significant_results` has a column named "regulon"
+  
+  # Step 4: Subset `mat_treg` to include only the significant regulons
+  fff <- t(mat_treg)[prova, , drop = FALSE]  # Keep matrix format even if only one regulon is present
+  
+  fff <- scale(fff)
+  
+  # Step 5: Order and filter cell types based on `treg` in `CD4totssubset`
+  indices_ordenados <- match(treg, row.names(CD4totssubset@meta.data))
+  celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+  
+  # Step 6: Create a data frame with cell types and assign conditions ("pre" or "post")
+  df <- data.frame(
+    identificador = indices_ordenados,
+    celltype.cnd = celltypes_filtrados
+  )
+  df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                         ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+  
+  if (any(grepl("CD8", df$celltype.cnd))) {
+    # CD8 Color Mapping
+    celltype_colors <- c(
+      "pre_CD8_Naive" = "skyblue", "post_CD8_Naive" = "skyblue",
+      "pre_CD8_mem" = "green", "post_CD8_mem"= "green",
+      "pre_CD8_ex" = "red", "post_CD8_ex" = "red",
+      "pre_CD8_ex_act" = "purple", "post_CD8_ex_act" = "purple",
+      "pre_CD8_eff" = "navy", "post_CD8_eff" = "navy",
+      "post_CD8_act" = "gold", "pre_CD8_act" = "gold"
+    )
+  } else {
+    # CD4 Color Mapping (Default)
+    celltype_colors <- c(
+      "pre_Naive" = "skyblue", "post_Naive" = "skyblue",
+      "pre_Th17" = "green", "post_Th17" = "green",
+      "pre_Treg" = "red", "post_Treg" = "red",
+      "pre_Tfh" = "purple", "post_Tfh" = "purple"
+    )
+  }
+  
+  
+  
+  # Step 7: Define column split vector for heatmap
+  split <- rep(c(rep("1.pre", sum(df$condition == "pre")), rep("2.post", sum(df$condition == "post"))), each = 1)
+  
+  # Step 8: Generate the heatmap
+  Heatmap(fff, name = "Z-score",  
+          cluster_columns = FALSE,
+          show_column_dend = FALSE,
+          cluster_column_slices = FALSE,
+          column_title_gp = gpar(fontsize = 8),
+          column_split = split,
+          column_gap = unit(1, "mm"),
+          cluster_rows = TRUE,
+          show_row_dend = FALSE,
+          col = col_fun,
+          row_names_gp = gpar(fontsize = 10),
+          column_title_rot = 90,
+          top_annotation = HeatmapAnnotation(
+            condition = df$condition,
+            celltype = df$celltype.cnd, 
+            col = list(
+              celltype = celltype_colors,
+              condition = c("pre" = "grey", "post" = "black")
+            )
+          ),
+          show_column_names = FALSE,
+          show_row_names = TRUE,
+          use_raster = TRUE,
+          raster_quality = 4,
+          cluster_row_slices = TRUE,
+          clustering_distance_rows = "spearman",
+          clustering_method_rows = "ward.D2",
+          row_dend_reorder = TRUE
+  )
+}
+
+
+
+generate_full_heatmap <- function(allreg, cluster_anno, CD4totssubset, orden_clusters, col_fun) {
+  # Step 1: Convert `cluster_anno` to a factor with the specified order
+  cluster_anno_factor <- factor(cluster_anno, levels = orden_clusters)
+  
+  # Step 2: Sort `cluster_anno` based on the factor order
+  cluster_anno_sorted <- cluster_anno[order(cluster_anno_factor)]
+  
+  # Step 3: Match and order indices in `CD4totssubset@meta.data` based on `cluster_anno_sorted`
+  indices_ordenados <- match(names(cluster_anno_sorted), row.names(CD4totssubset@meta.data))
+  celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+  
+  # Step 4: Create a data frame with cell types and assign conditions ("pre" or "post")
+  df <- data.frame(
+    identificador = indices_ordenados,
+    celltype.cnd = celltypes_filtrados
+  )
+  df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                         ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+  
+  # Step 5: Determine color mapping and dynamically generate the split vector
+  if (any(grepl("CD8", df$celltype.cnd))) {
+    # CD8 Color Mapping
+    celltype_colors <- c(
+      "pre_CD8_Naive" = "skyblue", "post_CD8_Naive" = "skyblue",
+      "pre_CD8_mem" = "green", "post_CD8_mem"= "green",
+      "pre_CD8_ex" = "red", "post_CD8_ex" = "red",
+      "pre_CD8_ex_act" = "purple", "post_CD8_ex_act" = "purple",
+      "pre_CD8_eff" = "navy", "post_CD8_eff" = "navy",
+      "post_CD8_act" = "gold", "pre_CD8_act" = "gold"
+    )
+    
+    # Calculate the actual number of columns for each CD8 type
+    split <- rep(NA, length(cluster_anno_sorted))
+    split[grepl("Naive", cluster_anno_sorted)] <- "1.Naive"
+    split[grepl("mem", cluster_anno_sorted)] <- "2.mem"
+    split[grepl("eff", cluster_anno_sorted)] <- "3.eff"
+    split[grepl("act", cluster_anno_sorted)] <- "4.act"
+    split[grepl("ex", cluster_anno_sorted)] <- "5.ex"
+    split[grepl("ex_act", cluster_anno_sorted)] <- "6.ex_act"
+    
+  } else {
+    # CD4 Color Mapping
+    celltype_colors <- c(
+      "pre_Naive" = "skyblue", "post_Naive" = "skyblue",
+      "pre_Th17" = "green", "post_Th17" = "green",
+      "pre_Treg" = "red", "post_Treg" = "red",
+      "pre_Tfh" = "purple", "post_Tfh" = "purple"
+    )
+    
+    # Calculate the actual number of columns for each CD4 type
+    split <- rep(NA, length(cluster_anno_sorted))
+    split[grepl("Naive", cluster_anno_sorted)] <- "1.Naive"
+    split[grepl("Treg", cluster_anno_sorted)] <- "2.Treg"
+    split[grepl("Tfh", cluster_anno_sorted)] <- "3.Tfh"
+    split[grepl("Th17", cluster_anno_sorted)] <- "4.Th17"
+  }
+  
+  # Step 6: Create ordered matrix for heatmap
+  mat_ordered2 <- t(allreg)[, names(cluster_anno_sorted)]
+  
+  # Step 7: Generate the heatmap
+  Heatmap(mat_ordered2, name = "Z-score",  
+          cluster_columns = FALSE,
+          show_column_dend = FALSE,
+          cluster_column_slices = TRUE,
+          column_title_gp = gpar(fontsize = 8),
+          column_split = split,
+          column_gap = unit(1, "mm"),
+          cluster_rows = TRUE,
+          show_row_dend = FALSE,
+          col = col_fun,
+          row_names_gp = gpar(fontsize = 10),
+          column_title_rot = 90,
+          top_annotation = HeatmapAnnotation(
+            condition = df$condition,
+            celltype = df$celltype.cnd, 
+            col = list(
+              celltype = celltype_colors,
+              condition = c("pre" = "grey", "post" = "black")
+            )
+          ),
+          show_column_names = FALSE,
+          show_row_names = TRUE,
+          use_raster = TRUE,
+          raster_quality = 4,
+          cluster_row_slices = TRUE,
+          clustering_distance_rows = "spearman",
+          clustering_method_rows = "ward.D2",
+          row_dend_reorder = TRUE
+  )
+}
+
+
+
+
+```
+
+
+
+
+# Build functions 
+
+```{r}
+# Define a function to get cell names based on a specific metadata condition
+get_cells_by_metadata <- function(seurat_obj, metadata_column, condition_value) {
+  # Ensure the metadata column exists in the Seurat object
+  if (!(metadata_column %in% colnames(seurat_obj@meta.data))) {
+    stop("The specified metadata column does not exist in the Seurat object's metadata.")
+  }
+  
+  # Filter cells based on the condition in the specified metadata column
+  cell_names <- rownames(seurat_obj@meta.data[seurat_obj@meta.data[[metadata_column]] == condition_value, ])
+  
+  return(cell_names)
+}
+
+
+create_regulon_df <- function(top_matrix, selected_cells, data) {
+  subset_matrix <- top_matrix[rownames(top_matrix) %in% selected_cells, ]
+  mean_values <- colMeans(subset_matrix, na.rm = TRUE)
+  
+  regulon_df <- data.frame(
+    regulon = names(mean_values),
+    zscore = mean_values
+  )
+  
+  combined <- c(data$TF, data$target)
+  frequencies <- table(combined)
+  
+  regulon_df$times <- frequencies[as.character(regulon_df$regulon)]
+  regulon_df$times[is.na(regulon_df$times)] <- 0  # Replace NAs with 0 if a regulon has no occurrences
+  
+  regulon_df$name <- ifelse(regulon_df$times > 5, regulon_df$regulon, "")
+  
+  return(regulon_df)
+}
+
+
+
+```
+
+
+
+
+
+```{r include=FALSE}
+# Load libraries
+
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+library(ggplot2)
+library(svglite)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+library(SeuratData)
+library(SeuratDisk)
+library(tidyverse)
+library(ComplexHeatmap)
+
+```
+
+
+# Tot CD4+ 
+
+```{r}
+# Load data Seurat
+CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/tots.h5seurat")
+
+# Load regulon data
+allreg <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/allregs.csv", header=T, row.names=1)
+top10 <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/top25regs.csv", header=T, row.names=1)
+
+# Cell names
+cluster_anno<- CD4totssubset$celltype.cnd
+
+# Heatmap vlines.
+col_fun = circlize::colorRamp2(c(-2, 0, 2), c("#0000FF", "white", "#FF0000"))
+
+# Cells of each condition
+split <- rep(c(rep("1.Naive", 2508), rep("2.Treg", 2681), rep("3.Tfh", 2573), rep("4.Th17", 1382), each=1))
+
+# Order cells
+orden_clusters <- c('pre_Naive', 'post_Naive', 'pre_Treg', 'post_Treg',  'pre_Tfh', 'post_Tfh' ,'pre_Th17', 'post_Th17' ) 
+cluster_anno_factor <- factor(cluster_anno, levels = orden_clusters)
+
+cluster_anno_sorted <- cluster_anno[order(cluster_anno_factor)]
+indices_ordenados <- match(names(cluster_anno_sorted), row.names(CD4totssubset@meta.data))
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+
+# Create dataframe
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+```
+
+
+# Find DE TFs
+
+```{r}
+significant_results <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Treg")
+significant_results2 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Naive")
+significant_results3 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Tfh")
+significant_results4 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Th17")
+```
+
+
+
+# Different heatmaps
+
+```{r}
+# Save Treg heatmap
+svg("./cd4heatmap_Treg.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD4totssubset, significant_results, pattern = "Treg", col_fun)
+dev.off()
+
+# Save Naive heatmap
+svg("./cd4heatmap_Naive.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD4totssubset, significant_results2, pattern = "Naive", col_fun)
+dev.off()
+
+# Save Tfh heatmap
+svg("./cd4heatmap_Tfh.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD4totssubset, significant_results3, pattern = "Tfh", col_fun)
+dev.off()
+
+# Save Th17 heatmap
+svg("./cd4heatmap_Th17.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD4totssubset, significant_results4, pattern = "Th17", col_fun)
+dev.off()
+
+# Save full heatmap
+svg("./cd4heatmap_full.svg")
+generate_full_heatmap(allreg, cluster_anno, CD4totssubset, orden_clusters, col_fun)
+dev.off()
+
+
+```
+
+
+
+
+
+# CD4 analysis
+
+```{r}
+
+library(matrixStats)
+library(dplyr)
+library(SeuratDisk)
+library(Seurat)
+
+# Load data
+CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/tots.h5seurat")
+
+# Load matrices
+allreg <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/allregs.csv", header=T, row.names=1)
+regulon <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/auc_mtx.csv", header=T, row.names=1)
+top10 <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/top10regsfinal.csv", header=T, row.names=1)
+
+
+# Load GRN
+data <- read.delim("/home/roger/Github/Master_thesis/python/totscd4/grnfinal.tsv", header = TRUE, row.names = 1)
+
+# Preprocess data
+data$source <- paste0(data$source, "...")
+data$target <- paste0(data$target, "...")
+# Subset regs that are expressed in CD4+ T cells
+data <- subset(data, source %in% colnames(allreg) & target %in% colnames(allreg))
+
+```
+
+
+
+
+
+# GRN that define all clusters
+
+```{r}
+
+# Subset data from top10 names
+data <- subset(data, source %in% colnames(top10) & target %in% colnames(top10))
+
+write.table(data, file = "./cd4datafinal.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+
+# List of cluster annotations to iterate over
+cluster_annotations <- c("Treg", "Naive", "Tfh", "Th17")  # Add all your desired annotations here
+
+# Loop over each annotation, generate regulon_df, and save
+for (annotation in cluster_annotations) {
+  # Step 1: Select cells based on the current annotation
+  selected_cells <- get_cells_by_metadata(CD4totssubset, 'cluster_redefined', annotation)
+  # Step 2: Create regulon_df using the selected cells
+  regulon_df <- create_regulon_df(top10, selected_cells, data)
+  # Step 3: Define the output file name based on the annotation
+  file_name <- paste0("./cd4final", annotation, ".tsv")
+  # Step 4: Save the regulon_df to a file with the generated file name
+  write.table(regulon_df, file = file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+  # Optional: Print message to confirm each step
+  cat("Saved file for annotation:", annotation, "as", file_name, "\n")
+}
+
+
+
+```
+
+
+# Analysis of branches 
+
+```{r}
+
+# Load GRN
+data <- read.delim("/home/roger/Github/Master_thesis/python/totscd4/grnfinal.tsv", header = TRUE, row.names = 1)
+
+# Preprocess data
+data$source <- paste0(data$source, "...")
+data$target <- paste0(data$target, "...")
+# Subset regs that are expressed in CD4+ T cells
+data <- subset(data, source %in% colnames(allreg) & target %in% colnames(allreg))
+
+
+calculate_regulon <- function(allreg, cluster_anno_sorted, seurat_obj, significant_results, pattern) {
+  # Step 1: Identify pre and post cells for the specified pattern
+  pre_cells <- names(cluster_anno_sorted)[grep(paste0("^pre_", pattern, "$"), cluster_anno_sorted)]
+  post_cells <- names(cluster_anno_sorted)[grep(paste0("^post_", pattern, "$"), cluster_anno_sorted)]
+  
+  # Step 2: Combine pre and post cells
+  all_cells <- c(pre_cells, post_cells)
+  
+  # Step 3: Subset the allreg matrix for the specified T-cell subset
+  mat_treg <- t(t(allreg)[, all_cells])
+  
+  # Step 4: Use the significant regulons to filter the matrix
+  significant_regulons <- significant_results$regulon
+  mat_filtered <- mat_treg[, significant_regulons, drop = FALSE]
+  
+  # Step 5: Scale the matrix
+  mat_scaled <- scale(mat_filtered)
+  
+  # Step 6: Separate scaled matrix into pre and post matrices
+  mat_pre <- mat_scaled[rownames(mat_scaled) %in% pre_cells, , drop = FALSE]
+  mat_post <- mat_scaled[rownames(mat_scaled) %in% post_cells, , drop = FALSE]
+
+  # Step 7: Calculate mean Z-scores for each regulon in pre and post conditions
+  mean_pre <- colMeans(mat_pre, na.rm = TRUE)
+  mean_post <- colMeans(mat_post, na.rm = TRUE)
+  
+  # Step 8: Create a dataframe with mean Z-scores for pre and post conditions
+  regulon_df <- data.frame(
+    regulon = colnames(mat_scaled),
+    mean_pre = mean_pre,
+    mean_post = mean_post
+  )
+  
+  # Step 9: Subset data for relevant TFs and targets
+  data2 <- subset(data, source %in% colnames(mat_scaled) & target %in% colnames(mat_scaled))
+
+  # Additional Data: Frequency count for each regulon if data is provided
+  combined <- c(data2$TF, data2$target)
+  frequencies <- table(combined)
+  
+  # Step 10: Add frequency and name columns to the regulon_df
+  regulon_df$times <- frequencies[as.character(regulon_df$regulon)]
+  regulon_df$times[is.na(regulon_df$times)] <- 0  # Replace NAs with 0 if a regulon has no occurrences
+  regulon_df$name <- ifelse(regulon_df$times > 5, regulon_df$regulon, "")
+  
+  # Return both regulon_df and data2 as a list
+  return(list(regulon_df = regulon_df, data2 = data2))
+}
+
+  
+# Define the patterns and corresponding significant results
+patterns <- c("Treg", "Naive", "Tfh", "Th17")
+significant_results_list <- list(significant_results, significant_results2, significant_results3, significant_results4)
+
+# Loop over each pattern and significant results
+for (i in seq_along(patterns)) {
+  # Define the current pattern and corresponding significant results
+  pattern <- patterns[i]
+  significant_results <- significant_results_list[[i]]
+  
+  # Call the calculate_regulon function
+  result <- calculate_regulon(allreg, cluster_anno_sorted, CD4totssubset, significant_results, pattern)
+  
+  # Extract regulon_df and data2 from the result
+  regulon_df <- result$regulon_df
+  data2 <- result$data2
+  
+  # Define the output file name for regulon_df
+  file_name <- paste0("./cd4branch", pattern, ".tsv")
+  write.table(regulon_df, file = file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+
+  # (Optional) Save data2 as well, if needed, using a similar approach
+  data2_file_name <- paste0("./cd4branch", pattern, "_data2.tsv")
+  write.table(data2, file = data2_file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+}
+
+
+
+
+```
+
+
+
+
+# CD8 cells
+
+
+```{r}
+
+CD8totssubset <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
+allreg <- read.csv("/home/roger/Github/Master_thesis/python/totscd8/allregs.csv", header=T, row.names=1)
+
+cluster_anno<- CD8totssubset$celltype.cnd
+orden_clusters <- c(
+  'pre_CD8_Naive', 'post_CD8_Naive',
+  'pre_CD8_mem', 'post_CD8_mem',
+  'pre_CD8_eff', 'post_CD8_eff',
+  'pre_CD8_act', 'post_CD8_act',
+  'pre_CD8_ex', 'post_CD8_ex',
+  'pre_CD8_ex_act', 'post_CD8_ex_act'
+)
+cluster_anno_factor <- factor(cluster_anno, levels = orden_clusters)
+cluster_anno_sorted <- cluster_anno[order(cluster_anno_factor)]
+indices_ordenados <- match(names(cluster_anno_sorted), row.names(CD8totssubset@meta.data))
+celltypes_filtrados <- CD8totssubset@meta.data$celltype.cnd[indices_ordenados]
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+
+# Create dataframe
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+```
+
+
+```{r}
+significant_results <- analyze_expression(cluster_anno_sorted, allreg, pattern = "CD8_act")
+significant_results2 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "CD8_Naive")
+significant_results4 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "CD8_ex_act")
+significant_results5 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "CD8_mem")
+#significant_results6 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "CD8_eff")
+
+```
+
+
+```{r}
+# Save CD8_act heatmap
+svg("./cd8_heatmap_CD8_act.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, significant_results, pattern = "CD8_act", col_fun)
+dev.off()
+
+# Save CD8_Naive heatmap
+svg("./cd8_heatmap_CD8_Naive.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, significant_results2, pattern = "CD8_Naive", col_fun)
+dev.off()
+
+# Save CD8_ex_act heatmap
+svg("./cd8_heatmap_CD8_ex_act.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, significant_results4, pattern = "CD8_ex_act", col_fun)
+dev.off()
+
+# Save CD8_mem heatmap
+svg("./cd8_heatmap_CD8_mem.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, significant_results5, pattern = "CD8_mem", col_fun)
+dev.off()
+
+# Save CD8_eff heatmap if needed (uncomment the following lines)
+# svg("cd8_heatmap_CD8_eff.svg")
+# generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, significant_results6, pattern = "CD8_eff", col_fun)
+# dev.off()
+
+# Save full CD8 heatmap
+svg("./cd8_heatmap_full.svg")
+generate_full_heatmap(allreg, cluster_anno, CD8totssubset, orden_clusters, col_fun)
+dev.off()
+
+
+```
+
+# Now i would like to compare different exhausted cell types
+
+```{r}
+
+exhausted_cells <- subset(CD8totssubset, celltype.cnd %in% c("pre_CD8_ex", "post_CD8_ex"))
+
+group4 <- compare_pre_post_conditions(CD8totssubset, allreg, pattern = "CD8_ex", cluster_ids = c("4"))
+group1 <- compare_pre_post_conditions(CD8totssubset, allreg, pattern = "CD8_ex", cluster_ids = c("1"))
+group1_8 <- compare_pre_post_conditions(CD8totssubset, allreg, pattern = "CD8_ex", cluster_ids = c("1", "8"))
+group1_4 <- compare_pre_post_conditions(CD8totssubset, allreg, pattern = "CD8_ex", cluster_ids = c("1", "4"))
+group8_4 <- compare_pre_post_conditions(CD8totssubset, allreg, pattern = "CD8_ex", cluster_ids = c("4", "8"))
+
+# List of all dataframes to concatenate
+df_list <- list(group4, group1, group1_8, group1_4, group8_4)  # Add all your dataframes here
+
+# Use do.call with rbind to concatenate them row-wise
+combined_df <- do.call(rbind, df_list)
+
+combined_df <- combined_df %>%
+     distinct(regulon, .keep_all = TRUE)
+
+svg("./cd8_heatmap_CD8_ex.svg")
+generate_heatmap(allreg, cluster_anno_sorted, CD8totssubset, combined_df, pattern = "CD8_ex", col_fun)
+dev.off()
+
+```
+
+# CD8 analysis
+
+```{r}
+
+
+# Load data
+CD8totssubset <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
+
+# Load matrices
+allreg <- read.csv("/home/roger/Github/Master_thesis/python/totscd8/allregs.csv", header=T, row.names=1)
+regulon <- read.csv("/home/roger/Github/Master_thesis/python/totscd8/auc_mtx.csv", header=T, row.names=1)
+top10 <- read.csv("/home/roger/Github/Master_thesis/python/totscd8/top10regsfinal.csv", header=T, row.names=1)
+
+
+# Load GRN
+data <- read.delim("/home/roger/Github/Master_thesis/python/totscd8/grnfinal.tsv", header = TRUE, row.names = 1)
+
+
+# Preprocess data
+data$source <- paste0(data$source, "...")
+data$target <- paste0(data$target, "...")
+# Subset regs that are expressed in CD4+ T cells
+data <- subset(data, source %in% colnames(allreg) & target %in% colnames(allreg))
+
+
+```
+
+
+
+
+# GRN that define all clusters
+
+```{r}
+
+# Subset data from top10 names
+data <- subset(data, source %in% colnames(top10) & target %in% colnames(top10))
+
+#write.table(data, file = "./cd4dataprova.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(data, file = "./cd8ata.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+
+# List of cluster annotations to iterate over
+cluster_annotations <- c("CD8_ex", "CD8_naive", "CD8_mem", "CD8_eff", "CD8_ex_act", "CD8_act")  # Add all your desired annotations here
+
+# Loop over each annotation, generate regulon_df, and save
+for (annotation in cluster_annotations) {
+  # Step 1: Select cells based on the current annotation
+  selected_cells <- get_cells_by_metadata(CD8totssubset, 'cluster', annotation)
+  # Step 2: Create regulon_df using the selected cells
+  regulon_df <- create_regulon_df(top10, selected_cells, data)
+  # Step 3: Define the output file name based on the annotation
+  file_name <- paste0("./cd8total", annotation, ".tsv")
+  # Step 4: Save the regulon_df to a file with the generated file name
+  write.table(regulon_df, file = file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+  # Optional: Print message to confirm each step
+  cat("Saved file for annotation:", annotation, "as", file_name, "\n")
+}
+
+
+# Load GRN
+data <- read.delim("/home/roger/Github/Master_thesis/python/totscd8/grnfinal.tsv", header = TRUE, row.names = 1)
+
+
+# Preprocess data
+data$source <- paste0(data$source, "...")
+data$target <- paste0(data$target, "...")
+# Subset regs that are expressed in CD4+ T cells
+data <- subset(data, source %in% colnames(allreg) & target %in% colnames(allreg))
+
+
+# Define the patterns and corresponding significant results for CD8 T cells
+patterns <- c("CD8_act", "CD8_Naive",  "CD8_ex_act", "CD8_mem", "CD8_ex")
+significant_results_list <- list(significant_results, significant_results2, significant_results4, significant_results5, combined_df)
+
+# Loop over each pattern and corresponding significant results
+for (i in seq_along(patterns)) {
+  # Define the current pattern and corresponding significant results
+  pattern <- patterns[i]
+  significant_results <- significant_results_list[[i]]
+  
+  # Call the calculate_regulon function
+  result <- calculate_regulon(allreg, cluster_anno_sorted, CD8totssubset, significant_results, pattern)
+  
+  # Extract regulon_df and data2 from the result
+  regulon_df <- result$regulon_df
+  data2 <- result$data2
+  
+  # Define the output file name for regulon_df with "cd8" prefix
+  file_name <- paste0("./cd8", pattern, ".tsv")
+  write.table(regulon_df, file = file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+  
+  # Save data2 as well, with a similar naming pattern
+  data2_file_name <- paste0("./cd8", pattern, "_data2.tsv")
+  write.table(data2, file = data2_file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+  
+  # Optional: Print confirmation
+  cat("Saved regulon_df and data2 for CD8 pattern:", pattern, "\n")
+}
+
+```
+
+
+
+
+
+
+```{r}
+
+
+
+generate_heatmap_multiple_conditions <- function(allreg, cluster_anno_sorted, seurat_obj, significant_results, data) {
+  # Define each group of cells
+  cluster4_pre <- rownames(seurat_obj@meta.data[seurat_obj@meta.data$seurat_clusters == 4 & grepl("^pre_", seurat_obj@meta.data$celltype.cnd), ])
+  cluster4_post <- rownames(seurat_obj@meta.data[seurat_obj@meta.data$seurat_clusters == 4 & grepl("^post_", seurat_obj@meta.data$celltype.cnd), ])
+  cluster1_pre <- rownames(seurat_obj@meta.data[seurat_obj@meta.data$seurat_clusters == 1 & grepl("^pre_", seurat_obj@meta.data$celltype.cnd), ])
+  cluster1_post <- rownames(seurat_obj@meta.data[seurat_obj@meta.data$seurat_clusters == 1 & grepl("^post_", seurat_obj@meta.data$celltype.cnd), ])
+  cluster8_pre <- rownames(seurat_obj@meta.data[seurat_obj@meta.data$seurat_clusters == 8 & grepl("^pre_", seurat_obj@meta.data$celltype.cnd), ])
+  
+  # Combine all cells
+  all_cells <- c(cluster4_pre, cluster4_post, cluster1_pre, cluster1_post, cluster8_pre)
+  
+  # Subset and scale the allreg matrix for significant regulons
+  mat_treg <- t(t(allreg)[, all_cells])
+  significant_regulons <- significant_results$regulon
+  mat_filtered <- mat_treg[, significant_regulons, drop = FALSE]
+  mat_scaled <- scale(mat_filtered)
+  
+  # Separate the matrix by groups and calculate mean Z-scores
+  mat_cluster4_pre <- mat_scaled[rownames(mat_scaled) %in% cluster4_pre, , drop = FALSE]
+  mat_cluster4_post <- mat_scaled[rownames(mat_scaled) %in% cluster4_post, , drop = FALSE]
+  mat_cluster1_pre <- mat_scaled[rownames(mat_scaled) %in% cluster1_pre, , drop = FALSE]
+  mat_cluster1_post <- mat_scaled[rownames(mat_scaled) %in% cluster1_post, , drop = FALSE]
+  mat_cluster8_pre <- mat_scaled[rownames(mat_scaled) %in% cluster8_pre, , drop = FALSE]
+  
+  # Calculate means for each condition
+  mean_cluster4_pre <- colMeans(mat_cluster4_pre, na.rm = TRUE)
+  mean_cluster4_post <- colMeans(mat_cluster4_post, na.rm = TRUE)
+  mean_cluster1_pre <- colMeans(mat_cluster1_pre, na.rm = TRUE)
+  mean_cluster1_post <- colMeans(mat_cluster1_post, na.rm = TRUE)
+  mean_cluster8_pre <- colMeans(mat_cluster8_pre, na.rm = TRUE)
+  
+  # Create a dataframe with mean Z-scores for each condition
+  regulon_df <- data.frame(
+    regulon = colnames(mat_filtered),
+    mean_cluster4_pre = mean_cluster4_pre,
+    mean_cluster4_post = mean_cluster4_post,
+    mean_cluster1_pre = mean_cluster1_pre,
+    mean_cluster1_post = mean_cluster1_post,
+    mean_cluster8_pre = mean_cluster8_pre
+  )
+  
+  # Subset data for relevant TFs and targets
+  data2 <- subset(data, source %in% colnames(mat_scaled) & target %in% colnames(mat_scaled))
+  
+  # Additional Data: Frequency count for each regulon if data is provided
+  combined <- c(data2$TF, data2$target)
+  frequencies <- table(combined)
+  
+  # Add frequency and name columns to the regulon_df
+  regulon_df$times <- frequencies[as.character(regulon_df$regulon)]
+  regulon_df$times[is.na(regulon_df$times)] <- 0  # Replace NAs with 0 if a regulon has no occurrences
+  regulon_df$name <- ifelse(regulon_df$times > 5, regulon_df$regulon, "")
+  
+  # Return both regulon_df and data2 as a list
+  return(list(regulon_df = regulon_df, data2 = data2))
+}
+
+
+result <- generate_heatmap_multiple_conditions(
+  allreg = allreg,
+  cluster_anno_sorted = cluster_anno_sorted,
+  seurat_obj = CD8totssubset,
+  significant_results = combined_df,
+  data = data
+)
+
+# Extract the outputs
+regulon_df <- result$regulon_df
+data2 <- result$data2
+
+
+# Calculate the median threshold
+threshold_median <- median(data2$score)
+threshold_mean <- mean(data2$score)
+
+
+# Plot histogram with median threshold line
+hist(data2$score, breaks = 50, main = "Histogram of Scores with Median Threshold", xlab = "Score", ylab = "Frequency")
+abline(v = threshold_median, col = "green", lwd = 2, lty = 2)  # Add median threshold line
+
+# Display median threshold value
+cat("Median Threshold:", threshold_median, "\n")
+
+
+alt <- data2[data2$score > threshold_mean, ]
+
+
+# Save the 'alt' data frame to a TSV file
+write.table(alt, file = "./cd8alt.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Save the 'regulon_df' data frame to a TSV file
+write.table(regulon_df, file = "./cd8regulon_df.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

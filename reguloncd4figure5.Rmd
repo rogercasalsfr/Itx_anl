@@ -1,0 +1,823 @@
+---
+title: "regulonCD4figure5"
+author: "Roger Casals"
+date: "2024-10-28"
+output: html_document
+---
+
+
+# Create functions
+
+
+```{r}
+
+analyze_expression <- function(cluster_anno_sorted, allreg, pattern) {
+  # Step 1: Identify pre, post, and combined groups based on the pattern
+  pre_group <- names(cluster_anno_sorted)[grep(paste0("pre_", pattern), cluster_anno_sorted)]
+  post_group <- names(cluster_anno_sorted)[grep(paste0("post_", pattern), cluster_anno_sorted)]
+  combined_group <- names(cluster_anno_sorted)[grep(pattern, cluster_anno_sorted)]
+  
+  # Step 2: Create matrices for the pre, post, and combined groups
+  mat_combined <- t(t(allreg)[, combined_group])
+  mat_pre <- t(t(allreg)[, pre_group])
+  mat_post <- t(t(allreg)[, post_group])
+  
+  # Step 3: Calculate mean and log2 fold change
+  mean_pre <- colMeans(mat_pre)
+  mean_post <- colMeans(mat_post)
+  log2_fold_change <- mean_pre - mean_post
+  
+  # Step 4: Identify top upregulated and downregulated regulons
+  upregulated <- head(sort(log2_fold_change), 150)
+  downregulated <- -head(sort(-log2_fold_change), 150)
+  
+  # Step 5: Filter matrices to include only top upregulated and downregulated regulons
+  mat_pre_filtered <- mat_pre[, colnames(mat_pre) %in% c(names(upregulated), names(downregulated))]
+  mat_post_filtered <- mat_post[, colnames(mat_post) %in% c(names(upregulated), names(downregulated))]
+  
+  # Step 6: Perform t-tests for each regulon and adjust p-values
+  p_values <- numeric(ncol(mat_pre_filtered))
+  for (i in 1:ncol(mat_pre_filtered)) {
+    # Compare means of regulon expression in "pre" vs "post"
+    t_test_results <- t.test(mat_pre_filtered[, i], mat_post_filtered[, i])
+    p_values[i] <- t_test_results$p.value
+  }
+  p_values_adjusted <- p.adjust(p_values, method = "bonferroni")
+  
+  # Step 7: Create the final dataframe with results
+  cambi <- c(upregulated, downregulated)
+  log10_p <- -log10(p_values_adjusted)
+  
+  df <- data.frame(
+    regulon = names(cambi),
+    log2_fold_change = cambi,
+    p_value = p_values,
+    p_value_adjusted = p_values_adjusted,
+    log10_p = log10_p
+  )
+  
+  # Filter significant regulons based on fold change and adjusted p-value threshold
+  significant_regulons <- subset(df, abs(log2_fold_change) > 0.5 & p_value_adjusted < 0.05)
+  
+  # Return the dataframe of significant regulons
+  return(significant_regulons)
+}
+
+
+
+
+
+# Example usage
+significant_results <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Treg")
+
+significant_results2 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Naive")
+significant_results3 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Tfh")
+significant_results4 <- analyze_expression(cluster_anno_sorted, allreg, pattern = "Th17")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+library(ggplot2)
+library(svglite)
+library(tidyr)
+library(dplyr)
+#library(dyno)
+library(tidyverse)
+library(dynwrap)
+library(SingleCellExperiment)
+#library(dyneval)
+library(SeuratData)
+library(SeuratDisk)
+#library(DESeq2)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(AnnotationDbi)
+library(dittoSeq)
+library(tidyverse)
+library(msigdbr)
+library(fgsea)
+library(ComplexHeatmap)
+
+```
+
+
+
+
+# TOT CD4
+
+```{r}
+
+CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/tots.h5seurat")
+allreg <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/allregs.csv", header=T, row.names=1)
+
+
+top10 <- read.csv("/home/roger/Github/Master_thesis/python/totscd4/top25regs.csv", header=T, row.names=1)
+
+cluster_anno<- CD4totssubset$celltype.cnd
+
+col_fun = circlize::colorRamp2(c(-2, 0, 2), c("#0000FF", "white", "#FF0000"))
+
+```
+
+# Final
+
+```{r}
+
+split <- rep(c(rep("1.Naive", 2508), rep("2.Treg", 2681), rep("3.Tfh", 2573), rep("4.Th17", 1382), each=1))
+
+```
+
+
+```{r}
+
+# Definir el orden de los clusters como un vector de caracteres
+orden_clusters <- c('pre_Naive', 'post_Naive', 'pre_Treg', 'post_Treg',  'pre_Tfh', 'post_Tfh' ,'pre_Th17', 'post_Th17' )  # Agrega aquí todos los nombres de los clusters en el orden deseado
+
+# Convertir el vector de caracteres a un factor con el orden deseado
+cluster_anno_factor <- factor(cluster_anno, levels = orden_clusters)
+
+# Ordenar el vector de caracteres por el factor
+cluster_anno_sorted <- cluster_anno[order(cluster_anno_factor)]
+# Obtener los índices ordenados de celltype.cnd según treg
+indices_ordenados <- match(names(cluster_anno_sorted), row.names(CD4totssubset@meta.data))
+# Filtrar y ordenar los celltypes según los índices ordenados
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+# Crear un dataframe con los identificadores y los celltypes filtrados y ordenados
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+# Ver las prmeras filas del dataframe
+
+# Crear la nueva columna con los valores "pre" y "post"
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+#fff <- t(allreg)[final, ]
+
+mat_ordered2 <- t(allreg)[, names(cluster_anno_sorted)]
+
+
+
+svg("/home/roger/Github/Immunotherapy/figures/cd4heatmap.svg")
+
+Heatmap(mat_ordered2, name = "Z-score",  
+        cluster_columns = FALSE, #TRUE
+        show_column_dend = FALSE,
+        cluster_column_slices = TRUE, #TRUE
+        column_title_gp = gpar(fontsize = 8),
+        column_split = split,
+        column_gap = unit(1, "mm"),
+        cluster_rows = TRUE, #TRUE
+        show_row_dend = FALSE,
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 10),
+        column_title_rot = 90,
+        top_annotation =  HeatmapAnnotation(
+          condition=df$condition,
+          celltype=df$celltype.cnd, 
+          
+          col=list(
+            celltype = c("pre_Naive" = "skyblue", "post_Naive" = "skyblue", "pre_Th17" = "green", "post_Th17"= "green", "pre_Treg" = "red", "post_Treg" ="red", "pre_Tfh"="purple", "post_Tfh"="purple"),
+            condition = c("pre"="grey", "post" = "black"))),
+      
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        use_raster = TRUE,
+        raster_quality = 4,
+        
+        cluster_row_slices = TRUE, #TRUE
+        clustering_distance_rows = "spearman", #euclidean
+        clustering_method_rows = "ward.D2",  #complete
+        row_dend_reorder = TRUE #TRUE
+        
+        )
+
+dev.off()
+
+
+```
+
+
+
+# Volcano Plot Treg
+
+
+
+## Diferència
+
+```{r echo=FALSE}
+
+
+pretreg<- names(cluster_anno_sorted)[grep("pre_Treg", cluster_anno_sorted)]
+posttreg<- names(cluster_anno_sorted)[grep("post_Treg", cluster_anno_sorted)]
+
+
+treg<- names(cluster_anno_sorted)[grep("Treg", cluster_anno_sorted)]
+
+
+mat_treg <- t(t(allreg)[, treg])
+
+mat_pretreg <- t(t(allreg)[, pretreg])
+mat_posttreg <- t(t(allreg)[, posttreg])
+
+meanpretreg <- colMeans(mat_pretreg)
+meanposttreg <- colMeans(mat_posttreg)
+
+log2_fold_change <- meanpretreg - meanposttreg
+
+upregulated <- head(sort(log2_fold_change), 150)
+downregulated <- -head(sort(-log2_fold_change), 150)
+
+mat_pretreg_filtrada <- mat_pretreg[, colnames(mat_pretreg) %in% c(names(upregulated), names(downregulated))]
+mat_posttreg_filtrada <- mat_posttreg[, colnames(mat_posttreg) %in% c(names(upregulated), names(downregulated))]
+
+# Suponiendo que 'pre_matrix' y 'post_matrix' son tus matrices de actividad Z-score para las condiciones "pre" y "post" respectivamente.
+
+# Inicializa un vector para almacenar los valores p resultantes
+valores_p <- numeric(ncol(mat_pretreg_filtrada))
+
+# Realiza el t-test para cada regulón (columna) por separado
+for (i in 1:ncol(mat_pretreg_filtrada)) {
+  resultados_t <- t.test(mat_pretreg_filtrada[,i], mat_posttreg_filtrada[,i])
+  valores_p[i] <- resultados_t$p.value
+}
+
+valores_p_adjusted <- p.adjust(valores_p, method = "bonferroni")
+
+
+
+# Calcula el log2 fold change como la diferencia en la actividad
+canvi <- c(upregulated, downregulated)
+# Calcula -log10 del valor p como la significancia estadística
+log10_p <- -log10(valores_p_adjusted)
+
+
+library(ggplot2)
+library(ggrepel)
+
+# Crear un data frame con los datos necesarios para ggplot2
+df <- data.frame(
+  log2_fold_change = canvi,
+  log10_p = log10_p,
+  regulon = names(canvi)
+)
+library(ggrepel)
+
+ggplot(data = df, aes(x = log2_fold_change, y = log10_p, label = regulon)) +
+  geom_point(aes(color = ifelse(log2_fold_change > 0.5 & log10_p > 10, "green", 
+                                ifelse(log2_fold_change < -0.5 & log10_p > 10, "black", "red"))), 
+             shape = 20, size = 3) +  # Aumentar el tamaño de los puntos
+  geom_text_repel(
+    data = subset(df, log2_fold_change > 0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = 0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  geom_text_repel(
+    data = subset(df, log2_fold_change < -0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = -0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  theme_minimal() +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "red") +
+  geom_hline(yintercept = 10, col = "red") +
+  labs(
+    title = "Th17",
+    x = "log2 Fold Change",
+    y = "-log10(p-value)", 
+    color = "Regulation state"
+  )
+
+prova <- subset(df, log2_fold_change > 0.5  | log2_fold_change < -0.5 & log10_p > -log10(0.05))
+
+
+```
+
+```{r}
+
+
+mat_treg <- t(t(allreg)[, treg])
+fff <- t(mat_treg)[row.names(prova), ]
+
+# Obtener los índices ordenados de celltype.cnd según treg
+indices_ordenados <- match(treg, row.names(CD4totssubset@meta.data))
+# Filtrar y ordenar los celltypes según los índices ordenados
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+# Crear un dataframe con los identificadores y los celltypes filtrados y ordenados
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+# Ver las prmeras filas del dataframe
+
+# Crear la nueva columna con los valores "pre" y "post"
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+split <- rep(c(rep("1.pre", nrow(mat_pretreg)), rep("2.post", nrow(mat_posttreg))), each = 1)
+
+Heatmap(fff, name = "Z-score",  
+        cluster_columns = FALSE, #TRUE
+        show_column_dend = FALSE,
+        cluster_column_slices = FALSE, #TRUE
+        column_title_gp = gpar(fontsize = 8),
+        column_split = split,
+        column_gap = unit(1, "mm"),
+        cluster_rows = TRUE, #TRUE
+        show_row_dend = FALSE,
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 10),
+        column_title_rot = 90,
+        top_annotation =  HeatmapAnnotation(
+          condition=df$condition,
+          celltype=df$celltype.cnd, 
+          
+          col=list(
+            celltype = c("pre_Naive" = "skyblue", "post_Naive" = "skyblue", "pre_Th17" = "green", "post_Th17"= "green", "pre_Treg" = "red", "post_Treg" ="red", "pre_Tfh"="purple", "post_Tfh"="purple"),
+            condition = c("pre"="grey", "post" = "black"))),
+      
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        use_raster = TRUE,
+        raster_quality = 4,
+        
+        cluster_row_slices = TRUE, #TRUE
+        clustering_distance_rows = "spearman", #euclidean
+        clustering_method_rows = "ward.D2",  #complete
+        row_dend_reorder = TRUE #TRUE
+        
+        )
+```
+
+
+
+# Volcano Plot Naive
+
+## Diference 
+
+```{r echo=FALSE}
+
+
+pretreg<- names(cluster_anno_sorted)[grep("pre_Naive", cluster_anno_sorted)]
+posttreg<- names(cluster_anno_sorted)[grep("post_Naive", cluster_anno_sorted)]
+
+
+treg<- names(cluster_anno_sorted)[grep("Naive", cluster_anno_sorted)]
+
+
+mat_pretreg <- t(t(allreg)[, pretreg])
+mat_posttreg <- t(t(allreg)[, posttreg])
+
+meanpretreg <- colMeans(mat_pretreg)
+meanposttreg <- colMeans(mat_posttreg)
+
+log2_fold_change <- meanpretreg - meanposttreg
+
+upregulated <- head(sort(log2_fold_change), 150)
+downregulated <- -head(sort(-log2_fold_change), 150)
+
+mat_pretreg_filtrada <- mat_pretreg[, colnames(mat_pretreg) %in% c(names(upregulated), names(downregulated))]
+mat_posttreg_filtrada <- mat_posttreg[, colnames(mat_posttreg) %in% c(names(upregulated), names(downregulated))]
+
+# Suponiendo que 'pre_matrix' y 'post_matrix' son tus matrices de actividad Z-score para las condiciones "pre" y "post" respectivamente.
+
+# Inicializa un vector para almacenar los valores p resultantes
+valores_p <- numeric(ncol(mat_pretreg_filtrada))
+
+# Realiza el t-test para cada regulón (columna) por separado
+for (i in 1:ncol(mat_pretreg_filtrada)) {
+  resultados_t <- t.test(mat_pretreg_filtrada[,i], mat_posttreg_filtrada[,i])
+  valores_p[i] <- resultados_t$p.value
+}
+
+valores_p_adjusted <- p.adjust(valores_p, method = "bonferroni")
+
+
+
+# Calcula el log2 fold change como la diferencia en la actividad
+canvi <- c(upregulated, downregulated)
+# Calcula -log10 del valor p como la significancia estadística
+log10_p <- -log10(valores_p_adjusted)
+
+
+library(ggplot2)
+library(ggrepel)
+
+# Crear un data frame con los datos necesarios para ggplot2
+df <- data.frame(
+  log2_fold_change = canvi,
+  log10_p = log10_p,
+  regulon = names(canvi)
+)
+library(ggrepel)
+
+ggplot(data = df, aes(x = log2_fold_change, y = log10_p, label = regulon)) +
+  geom_point(aes(color = ifelse(log2_fold_change > 0.5 & log10_p > 10, "green", 
+                                ifelse(log2_fold_change < -0.5 & log10_p > 10, "black", "red"))), 
+             shape = 20, size = 3) +  # Aumentar el tamaño de los puntos
+  geom_text_repel(
+    data = subset(df, log2_fold_change > 0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = 0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  geom_text_repel(
+    data = subset(df, log2_fold_change < -0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = -0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  theme_minimal() +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "red") +
+  geom_hline(yintercept = 10, col = "red") +
+  labs(
+    title = "Treg",
+    x = "log2 Fold Change",
+    y = "-log10(p-value)", 
+    color = "Regulation state"
+  )
+
+prova1 <- subset(df, log2_fold_change > 0.5  | log2_fold_change < -0.5 & log10_p > -log10(0.05))
+
+
+
+```
+
+
+
+```{r}
+mat_treg <- t(t(allreg)[, treg])
+fff <- t(mat_treg)[row.names(prova1), ]
+
+# Obtener los índices ordenados de celltype.cnd según treg
+indices_ordenados <- match(treg, row.names(CD4totssubset@meta.data))
+# Filtrar y ordenar los celltypes según los índices ordenados
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+# Crear un dataframe con los identificadores y los celltypes filtrados y ordenados
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+# Ver las prmeras filas del dataframe
+
+# Crear la nueva columna con los valores "pre" y "post"
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+split <- rep(c(rep("1.pre", nrow(mat_pretreg)), rep("2.post", nrow(mat_posttreg))), each = 1)
+
+Heatmap(fff, name = "Z-score",  
+        cluster_columns = FALSE, #TRUE
+        show_column_dend = FALSE,
+        cluster_column_slices = FALSE, #TRUE
+        column_title_gp = gpar(fontsize = 8),
+        column_split = split,
+        column_gap = unit(1, "mm"),
+        cluster_rows = TRUE, #TRUE
+        show_row_dend = FALSE,
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 10),
+        column_title_rot = 90,
+        top_annotation =  HeatmapAnnotation(
+          condition=df$condition,
+          celltype=df$celltype.cnd, 
+          
+          col=list(
+            celltype = c("pre_Naive" = "skyblue", "post_Naive" = "skyblue", "pre_Th17" = "green", "post_Th17"= "green", "pre_Treg" = "red", "post_Treg" ="red", "pre_Tfh"="purple", "post_Tfh"="purple"),
+            condition = c("pre"="grey", "post" = "black"))),
+      
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        use_raster = TRUE,
+        raster_quality = 4,
+        
+        cluster_row_slices = TRUE, #TRUE
+        clustering_distance_rows = "spearman", #euclidean
+        clustering_method_rows = "ward.D2",  #complete
+        row_dend_reorder = TRUE #TRUE
+        
+        )
+```
+
+
+
+
+# Volcano Plot Tfh
+
+## Diference
+```{r echo=FALSE}
+
+
+pretreg<- names(cluster_anno_sorted)[grep("pre_Tfh", cluster_anno_sorted)]
+posttreg<- names(cluster_anno_sorted)[grep("post_Tfh", cluster_anno_sorted)]
+
+
+treg<- names(cluster_anno_sorted)[grep("Tfh", cluster_anno_sorted)]
+
+
+mat_pretreg <- t(t(allreg)[, pretreg])
+mat_posttreg <- t(t(allreg)[, posttreg])
+
+meanpretreg <- colMeans(mat_pretreg)
+meanposttreg <- colMeans(mat_posttreg)
+
+log2_fold_change <- meanpretreg - meanposttreg
+
+upregulated <- head(sort(log2_fold_change), 150)
+downregulated <- -head(sort(-log2_fold_change), 150)
+
+mat_pretreg_filtrada <- mat_pretreg[, colnames(mat_pretreg) %in% c(names(upregulated), names(downregulated))]
+mat_posttreg_filtrada <- mat_posttreg[, colnames(mat_posttreg) %in% c(names(upregulated), names(downregulated))]
+
+# Suponiendo que 'pre_matrix' y 'post_matrix' son tus matrices de actividad Z-score para las condiciones "pre" y "post" respectivamente.
+
+# Inicializa un vector para almacenar los valores p resultantes
+valores_p <- numeric(ncol(mat_pretreg_filtrada))
+
+# Realiza el t-test para cada regulón (columna) por separado
+for (i in 1:ncol(mat_pretreg_filtrada)) {
+  resultados_t <- t.test(mat_pretreg_filtrada[,i], mat_posttreg_filtrada[,i])
+  valores_p[i] <- resultados_t$p.value
+}
+
+valores_p_adjusted <- p.adjust(valores_p, method = "bonferroni")
+
+
+
+# Calcula el log2 fold change como la diferencia en la actividad
+canvi <- c(upregulated, downregulated)
+# Calcula -log10 del valor p como la significancia estadística
+log10_p <- -log10(valores_p_adjusted)
+
+
+library(ggplot2)
+library(ggrepel)
+
+# Crear un data frame con los datos necesarios para ggplot2
+df <- data.frame(
+  log2_fold_change = canvi,
+  log10_p = log10_p,
+  regulon = names(canvi)
+)
+library(ggrepel)
+
+ggplot(data = df, aes(x = log2_fold_change, y = log10_p, label = regulon)) +
+  geom_point(aes(color = ifelse(log2_fold_change > 0.5 & log10_p > 10, "green", 
+                                ifelse(log2_fold_change < -0.5 & log10_p > 10, "black", "red"))), 
+             shape = 20, size = 3) +  # Aumentar el tamaño de los puntos
+  geom_text_repel(
+    data = subset(df, log2_fold_change > 0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = 0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  geom_text_repel(
+    data = subset(df, log2_fold_change < -0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = -0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  theme_minimal() +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "red") +
+  geom_hline(yintercept = 10, col = "red") +
+  labs(
+    title = "Tfh",
+    x = "log2 Fold Change",
+    y = "-log10(p-value)", 
+    color = "Regulation state"
+  )
+
+prova2 <- subset(df, log2_fold_change > 0.5  | log2_fold_change < -0.5 & log10_p > -log10(0.05))
+
+
+
+```
+
+
+
+```{r}
+mat_treg <- t(t(allreg)[, treg])
+fff <- t(mat_treg)[row.names(prova2), ]
+
+# Obtener los índices ordenados de celltype.cnd según treg
+indices_ordenados <- match(treg, row.names(CD4totssubset@meta.data))
+# Filtrar y ordenar los celltypes según los índices ordenados
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+# Crear un dataframe con los identificadores y los celltypes filtrados y ordenados
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+# Ver las prmeras filas del dataframe
+
+# Crear la nueva columna con los valores "pre" y "post"
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+split <- rep(c(rep("1.pre", nrow(mat_pretreg)), rep("2.post", nrow(mat_posttreg))), each = 1)
+
+Heatmap(fff, name = "Z-score",  
+        cluster_columns = FALSE, #TRUE
+        show_column_dend = FALSE,
+        cluster_column_slices = FALSE, #TRUE
+        column_title_gp = gpar(fontsize = 8),
+        column_split = split,
+        column_gap = unit(1, "mm"),
+        cluster_rows = TRUE, #TRUE
+        show_row_dend = FALSE,
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 10),
+        column_title_rot = 90,
+        top_annotation =  HeatmapAnnotation(
+          condition=df$condition,
+          celltype=df$celltype.cnd, 
+          
+          col=list(
+            celltype = c("pre_Naive" = "skyblue", "post_Naive" = "skyblue", "pre_Th17" = "green", "post_Th17"= "green", "pre_Treg" = "red", "post_Treg" ="red", "pre_Tfh"="purple", "post_Tfh"="purple"),
+            condition = c("pre"="grey", "post" = "black"))),
+      
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        use_raster = TRUE,
+        raster_quality = 4,
+        
+        cluster_row_slices = TRUE, #TRUE
+        clustering_distance_rows = "spearman", #euclidean
+        clustering_method_rows = "ward.D2",  #complete
+        row_dend_reorder = TRUE #TRUE
+        
+        )
+```
+
+
+
+# Volcano Plot Th17
+
+## Difference
+```{r echo=FALSE}
+
+
+pretreg<- names(cluster_anno_sorted)[grep("pre_Th17", cluster_anno_sorted)]
+posttreg<- names(cluster_anno_sorted)[grep("post_Th17", cluster_anno_sorted)]
+
+
+treg<- names(cluster_anno_sorted)[grep("Th17", cluster_anno_sorted)]
+
+mat_treg <- t(t(allreg)[, treg])
+
+mat_pretreg <- t(t(allreg)[, pretreg])
+mat_posttreg <- t(t(allreg)[, posttreg])
+
+meanpretreg <- colMeans(mat_pretreg)
+meanposttreg <- colMeans(mat_posttreg)
+
+log2_fold_change <- meanpretreg - meanposttreg
+
+upregulated <- head(sort(log2_fold_change), 150)
+downregulated <- -head(sort(-log2_fold_change), 150)
+
+mat_pretreg_filtrada <- mat_pretreg[, colnames(mat_pretreg) %in% c(names(upregulated), names(downregulated))]
+mat_posttreg_filtrada <- mat_posttreg[, colnames(mat_posttreg) %in% c(names(upregulated), names(downregulated))]
+
+# Suponiendo que 'pre_matrix' y 'post_matrix' son tus matrices de actividad Z-score para las condiciones "pre" y "post" respectivamente.
+
+# Inicializa un vector para almacenar los valores p resultantes
+valores_p <- numeric(ncol(mat_pretreg_filtrada))
+
+# Realiza el t-test para cada regulón (columna) por separado
+for (i in 1:ncol(mat_pretreg_filtrada)) {
+  resultados_t <- t.test(mat_pretreg_filtrada[,i], mat_posttreg_filtrada[,i])
+  valores_p[i] <- resultados_t$p.value
+}
+
+valores_p_adjusted <- p.adjust(valores_p, method = "bonferroni")
+
+
+
+# Calcula el log2 fold change como la diferencia en la actividad
+canvi <- c(upregulated, downregulated)
+# Calcula -log10 del valor p como la significancia estadística
+log10_p <- -log10(valores_p_adjusted)
+
+
+library(ggplot2)
+library(ggrepel)
+
+# Crear un data frame con los datos necesarios para ggplot2
+df <- data.frame(
+  log2_fold_change = canvi,
+  log10_p = log10_p,
+  regulon = names(canvi)
+)
+library(ggrepel)
+
+ggplot(data = df, aes(x = log2_fold_change, y = log10_p, label = regulon)) +
+  geom_point(aes(color = ifelse(log2_fold_change > 0.5 & log10_p > 10, "green", 
+                                ifelse(log2_fold_change < -0.5 & log10_p > 10, "black", "red"))), 
+             shape = 20, size = 3) +  # Aumentar el tamaño de los puntos
+  geom_text_repel(
+    data = subset(df, log2_fold_change > 0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = 0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  geom_text_repel(
+    data = subset(df, log2_fold_change < -0.5 & log10_p > 10), 
+    aes(label = regulon), 
+    nudge_x = -0.1, nudge_y = 0.1,  # Ajustar la posición del texto
+    color = "black"
+  ) +
+  theme_minimal() +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "red") +
+  geom_hline(yintercept = 10, col = "red") +
+  labs(
+    title = "Th17",
+    x = "log2 Fold Change",
+    y = "-log10(p-value)", 
+    color = "Regulation state"
+  )
+
+prova3 <- subset(df, log2_fold_change > 0.5  | log2_fold_change < -0.5 & log10_p > -log10(0.05))
+
+
+
+```
+
+
+```{r}
+mat_treg <- t(t(allreg)[, treg])
+fff <- t(mat_treg)[row.names(prova3), ]
+
+# Obtener los índices ordenados de celltype.cnd según treg
+indices_ordenados <- match(treg, row.names(CD4totssubset@meta.data))
+# Filtrar y ordenar los celltypes según los índices ordenados
+celltypes_filtrados <- CD4totssubset@meta.data$celltype.cnd[indices_ordenados]
+# Crear un dataframe con los identificadores y los celltypes filtrados y ordenados
+df <- data.frame(identificador = indices_ordenados, celltype.cnd = celltypes_filtrados)
+# Ver las prmeras filas del dataframe
+
+# Crear la nueva columna con los valores "pre" y "post"
+df$condition <- ifelse(grepl("^pre", df$celltype.cnd), "pre",
+                           ifelse(grepl("^post", df$celltype.cnd), "post", ""))
+
+split <- rep(c(rep("1.pre", nrow(mat_pretreg)), rep("2.post", nrow(mat_posttreg))), each = 1)
+
+Heatmap(fff, name = "Z-score",  
+        cluster_columns = FALSE, #TRUE
+        show_column_dend = FALSE,
+        cluster_column_slices = FALSE, #TRUE
+        column_title_gp = gpar(fontsize = 8),
+        column_split = split,
+        column_gap = unit(1, "mm"),
+        cluster_rows = TRUE, #TRUE
+        show_row_dend = FALSE,
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 10),
+        column_title_rot = 90,
+        top_annotation =  HeatmapAnnotation(
+          condition=df$condition,
+          celltype=df$celltype.cnd, 
+          
+          col=list(
+            celltype = c("pre_Naive" = "skyblue", "post_Naive" = "skyblue", "pre_Th17" = "green", "post_Th17"= "green", "pre_Treg" = "red", "post_Treg" ="red", "pre_Tfh"="purple", "post_Tfh"="purple"),
+            condition = c("pre"="grey", "post" = "black"))),
+      
+        show_column_names = FALSE,
+        show_row_names = TRUE,
+        use_raster = TRUE,
+        raster_quality = 4,
+        
+        cluster_row_slices = TRUE, #TRUE
+        clustering_distance_rows = "spearman", #euclidean
+        clustering_method_rows = "ward.D2",  #complete
+        row_dend_reorder = TRUE #TRUE
+        
+        )
+```
+
+
+
+
+
+```{r}
+
+
+#data <- read.delim("/home/roger/Github/Master_thesis/python/totscd4/expr_mat.adjacencies.tsv", header = TRUE)
+
+
+
+```
+
+
+
+
+
+
+
+
+

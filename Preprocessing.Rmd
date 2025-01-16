@@ -1,0 +1,39 @@
+---
+title: "Preprocessing"
+author: "Roger Casals"
+date: "2024-10-25"
+output: html_document
+---
+
+# Load the data
+
+```{r}
+
+# Define the URLs of the files you want to download
+url_metadata <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE123nnn/GSE123813/suppl/GSE123813_scc_metadata.txt.gz"
+url_counts <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE123nnn/GSE123813/suppl/GSE123813_scc_scRNA_counts.txt.gz"
+url_tcr <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE123nnn/GSE123813/suppl/GSE123813_scc_tcr.txt.gz"
+
+# Define the file paths where you want to save the downloaded files
+output_metadata <- "GSE123813_scc_metadata.txt.gz"
+output_counts <- "GSE123813_scc_scRNA_counts.txt.gz"
+output_tcr <- "GSE123813_scc_tcr.txt.gz"
+
+# Download the files using download.file
+download.file(url_metadata, output_metadata, method = "auto")
+download.file(url_counts, output_counts, method = "auto")
+download.file(url_tcr, output_tcr, method = "auto")
+
+# Now read the downloaded files directly from the gzipped format
+metadata <- read.table(gzfile(output_metadata), header = TRUE, sep = "\t")
+counts <- read.table(gzfile(output_counts), header = TRUE, sep = "\t")
+tcr <- read.table(gzfile(output_tcr), header = TRUE, sep = "\t")
+
+# Check the contents of the data
+head(metadata)
+head(counts)
+head(tcr)
+
+
+```
+
