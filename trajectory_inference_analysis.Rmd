@@ -1,0 +1,84 @@
+---
+title: "Trajectory_inference_analysis"
+author: "Roger Casals"
+date: "2025-01-22"
+output: html_document
+---
+
+# Load libraries
+
+```{r include=FALSE}
+
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+#library(slingshot)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+#library(celldex)
+library(SingleCellExperiment)
+#library(SingleR)
+library(SeuratData)
+library(SeuratDisk)
+library(DESeq2)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(AnnotationDbi)
+library(dittoSeq)
+library(tidyverse)
+library(msigdbr)
+library(clusterProfiler)
+library(fgsea)
+library(org.Hs.eg.db)
+
+
+```
+
+
+# Read Seurat Objects
+
+```{r include=FALSE}
+
+CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
+CD4totssubsetpre <- LoadH5Seurat("/home/roger/Baixades/precd8.h5seurat")
+CD4totssubsetpost <- LoadH5Seurat("/home/roger/Baixades/postcd8.h5seurat")
+```
+
+
+
+
+## Learn trajectory
+We use Monocle3 package to learn the trajectory. 
+
+```{r}
+# This example if for "pre-treatment conditions". But you can play with any comparision. 
+
+set.seed(123)
+CD4totssubsetpre@meta.data$cluster_redefined <- CD4totssubsetpre@meta.data$cluster
+
+totsCD4subsetpre <- as.cell_data_set(CD4totssubsetpre) # transform seurat to cell data object (input for monocle)
+totsCD4subsetpre <- cluster_cells(totsCD4subsetpre, reduction_method = "UMAP", )  # Cluster cells (necessary to learn graph)
+totsCD4subsetpre <- learn_graph(totsCD4subsetpre, use_partition = FALSE) # Learn graph on an unsupervised manner. 
+# Some parameters to check 
+
+
+totsCD4subsetpre@clusters$UMAP$clusters <- CD4totssubsetpre@active.ident
+# We set up the root as naive cells.
+totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = 'UMAP', root_cells = colnames(totsCD4subsetpre[,clusters(totsCD4subsetpre) == "pre_CD8_Naive"]))
+
+# Use plot_cells() to see the trajectory. 
+
+totsCD4subsetpre$monocle3_pseudotime <- pseudotime(totsCD4subsetpre)
+data.pseudototssubsetpre <- as.data.frame(colData(totsCD4subsetpre))
+
+```
+
+
+
+
+
+
+
+

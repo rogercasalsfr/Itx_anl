@@ -21,13 +21,10 @@ library(monocle3)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
-library(dyno)
 library(tidyverse)
-library(dynwrap)
 #library(celldex)
 library(SingleCellExperiment)
 #library(SingleR)
-library(dyneval)
 library(SeuratData)
 library(SeuratDisk)
 library(DESeq2)
@@ -48,13 +45,14 @@ library(org.Hs.eg.db)
 # Read Seurat Objects
 
 ```{r include=FALSE}
-CD4totssubset <- LoadH5Seurat("totscd8.h5Seurat")
-CD4totssubsetpre <- LoadH5Seurat("precd8.h5Seurat")
-CD4totssubsetpost <- LoadH5Seurat("postcd8.h5Seurat")
+
+CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
+CD4totssubsetpre <- LoadH5Seurat("/home/roger/Baixades/precd8.h5seurat")
+CD4totssubsetpost <- LoadH5Seurat("/home/roger/Baixades/postcd8.h5seurat")
 ```
 
 
-# Proporcions cel·lulars
+# Cellular proportions
 
 ```{r}
 
