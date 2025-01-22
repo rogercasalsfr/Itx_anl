@@ -77,6 +77,36 @@ data.pseudototssubsetpre <- as.data.frame(colData(totsCD4subsetpre))
 
 
 
+# Find DE genes for each differentiation branch
+We select the cells that are on each branch, we compute a Wilcoxon test on Seurat function to detect those genes. 
+
+```{r}
+cds_subset <- choose_cells(cds) #Subset cells
+subset_seurat_obj <- subset(seurat_obj, cells = colnames(cds_subset))  # Subset Seurat object
+
+diff <- FindMarkers(subset_seurat_obj, ident.1=c("pre_CD8_Naive"), ident.2=c("pre_CD8_mem"))  # Find DE genes based on Wilcoxon test based on the different conditions.
+diff <- subset(diff, p_val_adj < 0.05)  # Subset only the adjusted significative genes.
+
+# Repeat for all the 10 branches identified, and for the different conditions. 
+# Save gene list and Seurat objects for reproducibility. 
+
+
+```
+
+
+
+# Enrichment analysis using ReactomePA
+Based on the DE genes found, try to group genes into pathways to be more interpretable. 
+
+```{r}
+
+
+
+
+
+
+```
+
 
 
 

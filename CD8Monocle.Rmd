@@ -436,7 +436,7 @@ rowData(cds)$gene_short_name <- rownames(cds)
 
 #cds_subset <- choose_cells(cds)
 
-ciliated_cds_pr_test_res <- graph_test(cds, neighbor_graph="principal_graph", cores=1)
+ciliated_cds_pr_test_res <- graph_test(cds, neighbor_graph="principal_graph", cores=12)
 
 cds_pt_res <- ciliated_cds_pr_test_res
 cds_pt_res <- na.omit(cds_pt_res)
