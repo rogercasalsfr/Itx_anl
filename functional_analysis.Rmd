@@ -8,15 +8,26 @@ output: html_document
 # Read libraries 
 
 ```{r}
-
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(AnnotationDbi)
+library(dittoSeq)
+library(tidyverse)
+library(msigdbr)
+library(clusterProfiler)
+library(fgsea)
+library(org.Hs.eg.db)
 ```
 
 
 # Read data
 
 ```{r}
-
-
+setwd("/home/roger/data_immunotherapy/DEgenes/")
+file_list <- list.files(pattern = "^branch[1-10]+\\.csv$")
+for (file in file_list) {
+  markers <- read.csv(file, stringsAsFactors = FALSE)
+}
 
 ```
 
@@ -27,21 +38,12 @@ Based on the DE genes found, try to group genes into pathways to be more interpr
 
 ```{r}
 
-
-
-sig.gene2pre <- bitr(rownames(diff), 
+sig.gene2pre <- bitr(markers$gene, 
                 fromType="ALIAS", 
                  toType = "ENTREZID",
                   OrgDb = org.Hs.eg.db) 
 
 entrezz2pre <- sig.gene2pre$ENTREZID
-
-
-
-
-interseccio2 <- intersect(entrezz2pre,entrezz2post)
-depre2 <- setdiff(entrezz2pre,entrezz2post)
-depost2 <- setdiff(entrezz2post,entrezz2pre)
 
 enrich_gene_list_for_test <- list("pre"=depre2, "pre + post"=interseccio2, "post"=depost2)
 
@@ -60,7 +62,7 @@ test_enrich22 <- compareCluster(geneCluster = enrich_gene_list_for_test,
 
 test_enrich <- compareCluster(geneCluster = enrich_gene_list_for_test, 
                                   pAdjustMethod = "BH",
-                                  pvalueCutoff  = 0.01,
+                                  pvalueCutoff  = 0.05,
                                   qvalueCutoff  = 0.05,
                                  fun =  "enrichPathway")
 
