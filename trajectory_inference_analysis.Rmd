@@ -41,9 +41,9 @@ library(org.Hs.eg.db)
 
 ```{r include=FALSE}
 
-CD4totssubset <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
-CD4totssubsetpre <- LoadH5Seurat("/home/roger/Baixades/precd8.h5seurat")
-CD4totssubsetpost <- LoadH5Seurat("/home/roger/Baixades/postcd8.h5seurat")
+CD4 <- LoadH5Seurat("/home/roger/Baixades/totscd8.h5seurat")
+#CD4pre <- LoadH5Seurat("/home/roger/Baixades/precd8.h5seurat")
+CD4pre <- LoadH5Seurat("/home/roger/Baixades/postcd8.h5seurat")
 ```
 
 
@@ -56,22 +56,24 @@ We use Monocle3 package to learn the trajectory.
 # This example if for "pre-treatment conditions". But you can play with any comparision. 
 
 set.seed(123)
-CD4totssubsetpre@meta.data$cluster_redefined <- CD4totssubsetpre@meta.data$cluster
+CD4pre@meta.data$cluster_redefined <- CD4pre@meta.data$cluster
 
-totsCD4subsetpre <- as.cell_data_set(CD4totssubsetpre) # transform seurat to cell data object (input for monocle)
-totsCD4subsetpre <- cluster_cells(totsCD4subsetpre, reduction_method = "UMAP", )  # Cluster cells (necessary to learn graph)
-totsCD4subsetpre <- learn_graph(totsCD4subsetpre, use_partition = FALSE) # Learn graph on an unsupervised manner. 
+cds_object <- as.cell_data_set(CD4pre) # transform seurat to cell data object (input for monocle)
+cds_object <- cluster_cells(cds_object, reduction_method = "UMAP", )  # Cluster cells (necessary to learn graph)
+cds_object <- learn_graph(cds_object, use_partition = FALSE, learn_graph_control = list(euclidean_distance_ratio=2, minimal_branch_len=5, prune_graph=TRUE)) # Learn graph on an unsupervised manner. 
 # Some parameters to check 
 
 
-totsCD4subsetpre@clusters$UMAP$clusters <- CD4totssubsetpre@active.ident
-# We set up the root as naive cells.
-totsCD4subsetpre <- order_cells(totsCD4subsetpre, reduction_method = 'UMAP', root_cells = colnames(totsCD4subsetpre[,clusters(totsCD4subsetpre) == "pre_CD8_Naive"]))
+cds_object@clusters$UMAP$clusters <- CD4pre@active.ident
+
+cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "post_CD8_mem"]))  # We set up the root as naive cells.
 
 # Use plot_cells() to see the trajectory. 
+plot_cells(cds_object)
 
-totsCD4subsetpre$monocle3_pseudotime <- pseudotime(totsCD4subsetpre)
-data.pseudototssubsetpre <- as.data.frame(colData(totsCD4subsetpre))
+# Extract pseudotime values and closest nodes for each cell. Add into Seurat's object for further pre-processing
+cds_object$monocle3_pseudotime <- pseudotime(cds_object)
+cds_object@colData$closest_node <- principal_graph_aux(cds_object)$UMAP$pr_graph_cell_proj_closest_vertex
 
 ```
 
@@ -81,34 +83,23 @@ data.pseudototssubsetpre <- as.data.frame(colData(totsCD4subsetpre))
 We select the cells that are on each branch, we compute a Wilcoxon test on Seurat function to detect those genes. 
 
 ```{r}
-cds_subset <- choose_cells(cds) #Subset cells
-subset_seurat_obj <- subset(seurat_obj, cells = colnames(cds_subset))  # Subset Seurat object
+# Identify the nodes that correspond to each branch and do posterior analysis
+cds_subset <- choose_cells(cds_object) #Subset cells
+subset_seurat_obj <- subset(CD4pre, cells = colnames(cds_subset))  # Subset Seurat object
 
-diff <- FindMarkers(subset_seurat_obj, ident.1=c("pre_CD8_Naive"), ident.2=c("pre_CD8_mem"))  # Find DE genes based on Wilcoxon test based on the different conditions.
-diff <- subset(diff, p_val_adj < 0.05)  # Subset only the adjusted significative genes.
+markers <- FindMarkers(subset_seurat_obj, ident.1=c("post_CD8_act"), ident.2=c("post_CD8_ex"))  # Find DE genes based on Wilcoxon test based on the different conditions.
+markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 1)  # Subset only the adjusted significative genes.
+
+#Idents(subset_seurat_obj) <- "RNA_snn_res.0.3"
+#markers <- FindMarkers(subset_seurat_obj, ident.1=c("8"), ident.2=c("1"))  # Find DE genes based on Wilcoxon test based on the different conditions.
+
+
 
 # Repeat for all the 10 branches identified, and for the different conditions. 
 # Save gene list and Seurat objects for reproducibility. 
+write.csv(markers, file = "/home/roger/data_immunotherapy/DEgenes/branch10.csv", row.names = FALSE)
 
 
 ```
-
-
-
-# Enrichment analysis using ReactomePA
-Based on the DE genes found, try to group genes into pathways to be more interpretable. 
-
-```{r}
-
-
-
-
-
-
-```
-
-
-
-
 
 

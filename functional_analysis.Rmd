@@ -1,0 +1,113 @@
+---
+title: "functional_analysis"
+author: "Roger Casals"
+date: "2025-01-23"
+output: html_document
+---
+
+# Read libraries 
+
+```{r}
+
+```
+
+
+# Read data
+
+```{r}
+
+
+
+```
+
+
+
+# Enrichment analysis using ReactomePA
+Based on the DE genes found, try to group genes into pathways to be more interpretable. 
+
+```{r}
+
+
+
+sig.gene2pre <- bitr(rownames(diff), 
+                fromType="ALIAS", 
+                 toType = "ENTREZID",
+                  OrgDb = org.Hs.eg.db) 
+
+entrezz2pre <- sig.gene2pre$ENTREZID
+
+
+
+
+interseccio2 <- intersect(entrezz2pre,entrezz2post)
+depre2 <- setdiff(entrezz2pre,entrezz2post)
+depost2 <- setdiff(entrezz2post,entrezz2pre)
+
+enrich_gene_list_for_test <- list("pre"=depre2, "pre + post"=interseccio2, "post"=depost2)
+
+test_enrich2 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  ont           = "BP",
+                                  OrgDb = org.Hs.eg.db,
+                                  pAdjustMethod = "BH",
+                                  pvalueCutoff  = 0.01,
+                                  qvalueCutoff  = 0.05,
+                                 fun =  enrichGO)
+test_enrich22 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  ont           = "BP",
+                                  OrgDb = org.Hs.eg.db,
+                                  
+                                 fun =  groupGO)
+
+test_enrich <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                                  pAdjustMethod = "BH",
+                                  pvalueCutoff  = 0.01,
+                                  qvalueCutoff  = 0.05,
+                                 fun =  "enrichPathway")
+
+test_kegg <- compareCluster(geneCluster = enrich_gene_list_for_test, 
+                            
+                                  pvalueCutoff  = 0.01,
+                                 qvalueCutoff  = 0.05,
+                                  fun =  "enrichDO")
+
+
+
+dotplot(test_kegg ,label_format = 100 ,showCategory=20, font.size=8)
+
+#dotplot(test_enrich22,label_format = 100 ,showCategory=20, font.size=8)
+dotplot(test_enrich,label_format = 100 ,showCategory=20, font.size=8)
+dotplot(test_enrich2, label_format=100, showCategory=20, font.size=8)
+
+
+
+xx <- pairwise_termsim(test_kegg)
+xx1 <- pairwise_termsim(test_enrich2)
+
+cnetplot(test_enrich)
+emapplot(xx1)
+
+
+
+
+
+provaaaa <- list("pre"=depre,"post"=depost)
+
+reactome <- compareCluster(geneCluster=entrezz2pre, fun="enrichPathway")
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+cds_object
+
+
+```
+
+
