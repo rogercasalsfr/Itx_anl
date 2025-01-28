@@ -87,14 +87,14 @@ markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 1) # Subset only
 markers$gene <- row.names(markers)
 markers$diff <- markers$pct.1 - markers$pct.2
 
-#Idents(subset_seurat_obj) <- "RNA_snn_res.0.3"
-#markers <- FindMarkers(subset_seurat_obj, ident.1=c("8"), ident.2=c("1"))  # Find DE genes based on Wilcoxon test based on the different conditions.
+Idents(subset_seurat_obj) <- "RNA_snn_res.0.3"
+markers <- FindMarkers(subset_seurat_obj, ident.1=c("8"), ident.2=c("1"))  # Find DE genes based on Wilcoxon test based on the different conditions.
 
 
 # Repeat for all the 10 branches identified, and for the different conditions. 
 # Save gene list and Seurat objects for reproducibility. 
-write.csv(markers, file = "/home/roger/data_immunotherapy/DEgenes/branch7.csv", row.names = FALSE)
-write.csv(cell_names, file = "/home/roger/data_immunotherapy/cell_names/branch7.csv", row.names = FALSE)
+write.csv(markers, file = "/home/roger/data_immunotherapy/DEgenes/branch6.csv", row.names = FALSE)
+write.csv(cell_names, file = "/home/roger/data_immunotherapy/cell_names/branch6.csv", row.names = FALSE)
 
 ```
 

@@ -5,98 +5,72 @@ date: "2025-01-23"
 output: html_document
 ---
 
-# Read libraries 
-
-```{r}
-library(org.Hs.eg.db)
-library(clusterProfiler)
-library(AnnotationDbi)
-library(dittoSeq)
-library(tidyverse)
-library(msigdbr)
-library(clusterProfiler)
-library(fgsea)
-library(org.Hs.eg.db)
-```
-
-
-# Read data
-
-```{r}
-setwd("/home/roger/data_immunotherapy/DEgenes/")
-file_list <- list.files(pattern = "^branch[1-10]+\\.csv$")
-for (file in file_list) {
-  markers <- read.csv(file, stringsAsFactors = FALSE)
-}
-
-```
-
-
-
 # Enrichment analysis using ReactomePA
 Based on the DE genes found, try to group genes into pathways to be more interpretable. 
 
+
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(gtools) # For natural sorting
+
+# Set working directory
+setwd("/home/roger/data_immunotherapy/DEgenes/")
+
+# List all files matching the pattern and sort them naturally
+file_list <- mixedsort(list.files(pattern = "^branch[0-9]+\\.csv$"))
+
+# Initialize the overall lists to store Entrez IDs and original gene markers
+enrich_gene_list <- list()
+gene_marker_list <- list()
+
+# Loop through each file
+for (file in file_list) {
+  # Read the CSV file
+  markers <- read.csv(file, stringsAsFactors = FALSE)
+  
+  # Convert gene symbols to Entrez IDs
+  sig.gene2pre <- bitr(markers$gene, 
+                       fromType = "ALIAS", 
+                       toType = "ENTREZID", 
+                       OrgDb = org.Hs.eg.db)
+
+  # Extract Entrez IDs
+  entrezz2pre <- sig.gene2pre$ENTREZID
+
+  # Extract branch name
+  branch_name <- gsub("\\.csv", "", file) # Extract branch name from file
+
+  # Add Entrez IDs to the list
+  enrich_gene_list[[branch_name]] <- entrezz2pre
+
+  # Add original gene markers to a separate list
+  gene_marker_list[[branch_name]] <- markers$gene
+}
+
+
+```
+
+
+
+
+
 ```{r}
 
-sig.gene2pre <- bitr(markers$gene, 
-                fromType="ALIAS", 
-                 toType = "ENTREZID",
-                  OrgDb = org.Hs.eg.db) 
 
-entrezz2pre <- sig.gene2pre$ENTREZID
-
-enrich_gene_list_for_test <- list("pre"=depre2, "pre + post"=interseccio2, "post"=depost2)
-
-test_enrich2 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
-                                  ont           = "BP",
-                                  OrgDb = org.Hs.eg.db,
-                                  pAdjustMethod = "BH",
-                                  pvalueCutoff  = 0.01,
-                                  qvalueCutoff  = 0.05,
-                                 fun =  enrichGO)
-test_enrich22 <- compareCluster(geneCluster = enrich_gene_list_for_test, 
-                                  ont           = "BP",
-                                  OrgDb = org.Hs.eg.db,
-                                  
-                                 fun =  groupGO)
-
-test_enrich <- compareCluster(geneCluster = enrich_gene_list_for_test, 
-                                  pAdjustMethod = "BH",
-                                  pvalueCutoff  = 0.05,
-                                  qvalueCutoff  = 0.05,
-                                 fun =  "enrichPathway")
-
-test_kegg <- compareCluster(geneCluster = enrich_gene_list_for_test, 
-                            
-                                  pvalueCutoff  = 0.01,
-                                 qvalueCutoff  = 0.05,
-                                  fun =  "enrichDO")
+reactome <- compareCluster(geneCluster=enrich_gene_list, fun="enrichPathway")
 
 
-
-dotplot(test_kegg ,label_format = 100 ,showCategory=20, font.size=8)
-
-#dotplot(test_enrich22,label_format = 100 ,showCategory=20, font.size=8)
-dotplot(test_enrich,label_format = 100 ,showCategory=20, font.size=8)
-dotplot(test_enrich2, label_format=100, showCategory=20, font.size=8)
+dotplot(reactome ,label_format = 100 ,showCategory=5, font.size=8, color="p.adjust")
 
 
+# Convert the compareClusterResult object to a data frame
+reactome_df <- as.data.frame(reactome@compareClusterResult)
+# Specify the output file path
+output_file <- "/home/roger/data_immunotherapy/reactome_compareClusterResult.csv"
 
-xx <- pairwise_termsim(test_kegg)
-xx1 <- pairwise_termsim(test_enrich2)
-
-cnetplot(test_enrich)
-emapplot(xx1)
-
-
-
-
-
-provaaaa <- list("pre"=depre,"post"=depost)
-
-reactome <- compareCluster(geneCluster=entrezz2pre, fun="enrichPathway")
-
-
+# Save the data frame as a CSV file
+write.csv(reactome_df, file = output_file, row.names = FALSE)
 
 
 
