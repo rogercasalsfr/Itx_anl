@@ -1,7 +1,7 @@
 ---
-title: "functional_analysis"
+title: "enrich_anl_CD4"
 author: "Roger Casals"
-date: "2025-01-23"
+date: "2025-02-03"
 output: html_document
 ---
 
@@ -16,10 +16,10 @@ library(gtools)
 library(viridis)
 
 # Set working directory
-setwd("/home/roger/data_immunotherapy/DEgenes/")
+setwd("/home/roger/data_immunotherapy/CD4/DEgenes/")
 
 # List all files matching the pattern and sort them naturally
-file_list <- mixedsort(list.files(pattern = "^branch[0-9]+\\.csv$"))
+file_list <- mixedsort(list.files(pattern = "^branch[0-5]+\\.csv$"))
 
 # Initialize the overall lists to store Entrez IDs and original gene markers
 enrich_gene_list <- list()
@@ -89,7 +89,7 @@ reactome_df <- as.data.frame(reactome@compareClusterResult)
 
 
 # Specify the output file path
-output_file <- "/home/roger/data_immunotherapy/reactome_compareClusterResult.csv"
+output_file <- "/home/roger/data_immunotherapy/CD4/reactome_compareClusterResult.csv"
 
 # Save the data frame as a CSV file
 write.csv(reactome_df, file = output_file, row.names = FALSE)
@@ -97,7 +97,5 @@ write.csv(reactome_df, file = output_file, row.names = FALSE)
 
 
 ```
-
-
 
 
