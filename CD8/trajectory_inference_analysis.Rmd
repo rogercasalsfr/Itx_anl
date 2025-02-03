@@ -83,7 +83,7 @@ subset_seurat_obj <- subset(CD4pre, cells = colnames(cds_subset))  # Subset Seur
 cell_names <- data.frame(CellNames = colnames(subset_seurat_obj))
 
 markers <- FindMarkers(subset_seurat_obj, ident.1=c("pre_CD8_act", ident.2=c("pre_CD8_ex")))  # Find DE genes based on Wilcoxon test based on the different conditions.
-markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 1) # Subset only the adjusted significative genes.
+markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 1) # Subset only the adjusted significative genes, that at least have a 0.5 log2FC.
 markers$gene <- row.names(markers)
 markers$diff <- markers$pct.1 - markers$pct.2
 
@@ -97,5 +97,69 @@ write.csv(markers, file = "/home/roger/data_immunotherapy/DEgenes/branch5.csv", 
 write.csv(cell_names, file = "/home/roger/data_immunotherapy/cell_names/branch5.csv", row.names = FALSE)
 
 ```
+
+
+Based on the cell names I can try to identify all the DE genes using Wilcoxon test on Seurat package.
+Do it for all the branches in the different cell types. 
+
+```{r}
+
+library(Seurat)
+
+# Define directories
+cell_names_dir <- "/home/roger/data_immunotherapy/cell_names/"
+output_dir <- "/home/roger/data_immunotherapy/DEgenes/"
+
+# Define manual branch comparisons
+branch_comparisons <- list(
+  "branch1" = c("pre_Naive", "Memory"),
+  "branch2" = c("Memory", "Effector"),
+  "branch3" = c("Effector", "Exhausted"),
+  "branch4" = c("Memory", "Regulatory"),
+  "branch5" = c("Effector", "Tfh"),
+  "branch6" = c("Naive", "Treg"),
+  "branch7" = c("Memory", "Effector2") # Adjust based on your classifications
+)
+
+# Loop through branches 1 to 7
+for (i in 1:7) {
+  branch_name <- paste0("branch", i)
+  branch_file <- paste0(cell_names_dir, branch_name, ".csv")
+  degenes_file <- paste0(output_dir, branch_name, ".csv")
+  
+  if (file.exists(branch_file)) {
+    cell_names <- read.csv(branch_file, stringsAsFactors = FALSE)
+    
+    if (!is.null(cell_names) && nrow(cell_names) > 0) {
+      subset_seurat_obj <- subset(CD4pre, cells = cell_names[, 1])
+      
+      group1 <- branch_comparisons[[branch_name]][1]
+      group2 <- branch_comparisons[[branch_name]][2]
+      
+      markers <- FindMarkers(
+        subset_seurat_obj, 
+        ident.1 = group1, 
+        ident.2 = group2
+      )
+      
+      markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 0.5) # Subset only the adjusted significative genes, that at least have a 0.5 log2FC.
+      markers$gene <- row.names(markers)
+      markers$diff <- markers$pct.1 - markers$pct.2
+      
+      write.csv(markers, file = degenes_file, row.names = FALSE)
+    }
+  }
+}
+
+
+
+
+
+
+```
+
+
+
+
 
 
