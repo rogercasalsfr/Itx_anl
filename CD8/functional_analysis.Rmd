@@ -12,7 +12,8 @@ Based on the DE genes found, try to group genes into pathways to be more interpr
 ```{r}
 library(clusterProfiler)
 library(org.Hs.eg.db)
-library(gtools) # For natural sorting
+library(gtools)
+library(viridis)
 
 # Set working directory
 setwd("/home/roger/data_immunotherapy/DEgenes/")
@@ -58,14 +59,35 @@ for (file in file_list) {
 ```{r}
 
 
-reactome <- compareCluster(geneCluster=enrich_gene_list, fun="enrichPathway")
+reactome <- compareCluster(geneCluster=enrich_gene_list, fun="enrichPathway", pvalueCutoff=0.05)
 
+# Create the dot plot
+p1 <- dotplot(reactome, label_format = 75, size = "count", showCategory = 5, font.size = 8) #, color="p.adjust")
 
-dotplot(reactome ,label_format = 100 ,showCategory=5, font.size=8, color="p.adjust")
+# Define significance threshold
+significance_threshold <- 0.05  # Adjust if needed
+
+# Calculate logarithmic breaks
+my_log_breaks <- round(log10(significance_threshold)):round(log10(min(reactome@compareClusterResult$p.adjust)))
+my_log_breaks <- my_log_breaks[my_log_breaks %% 3 == 0]
+my_breaks <- 10^my_log_breaks
+
+# Apply the 'cividis' color scale with fill instead of color
+p5 <- p1 + scale_fill_viridis(
+  option = 'cividis',
+  direction = -1,
+  trans = 'log',
+  breaks = my_breaks
+)
+print(p5)
+
 
 
 # Convert the compareClusterResult object to a data frame
 reactome_df <- as.data.frame(reactome@compareClusterResult)
+
+
+
 # Specify the output file path
 output_file <- "/home/roger/data_immunotherapy/reactome_compareClusterResult.csv"
 
