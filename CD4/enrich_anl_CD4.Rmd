@@ -61,6 +61,7 @@ for (file in file_list) {
 
 reactome <- compareCluster(geneCluster=enrich_gene_list, fun="enrichPathway", pvalueCutoff=0.05)
 
+svg("/home/roger/data_immunotherapy/CD4/reactomeCD4.svg")
 # Create the dot plot
 p1 <- dotplot(reactome, label_format = 75, size = "count", showCategory = 5, font.size = 8) #, color="p.adjust")
 
@@ -80,7 +81,7 @@ p5 <- p1 + scale_fill_viridis(
   breaks = my_breaks
 )
 print(p5)
-
+dev.off()
 
 
 # Convert the compareClusterResult object to a data frame
