@@ -38,8 +38,8 @@ library(org.Hs.eg.db)
 ```{r include=FALSE}
 
 #CD4 <- LoadH5Seurat("/home/roger/Baixades/tots.h5seurat")
-CD4pre <- LoadH5Seurat("/home/roger/Baixades/pre.h5seurat")
-#CD4pre <- LoadH5Seurat("/home/roger/Baixades/post.h5seurat")
+#CD4pre <- LoadH5Seurat("/home/roger/Baixades/pre.h5seurat")
+CD4pre <- LoadH5Seurat("/home/roger/Baixades/post.h5seurat")
 ```
 
 
@@ -62,7 +62,7 @@ cds_object <- learn_graph(cds_object, use_partition = FALSE, learn_graph_control
 
 cds_object@clusters$UMAP$clusters <- CD4pre@active.ident
 
-cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "pre_Naive"]))  # We set up the root as naive cells.
+cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "post_Naive"]))  # We set up the root as naive cells.
 
 # Use plot_cells() to see the trajectory. 
 plot_cells(cds_object)
@@ -84,7 +84,7 @@ cds_subset <- choose_cells(cds_object) #Subset cells
 subset_seurat_obj <- subset(CD4pre, cells = colnames(cds_subset))  # Subset Seurat object
 cell_names <- data.frame(CellNames = colnames(subset_seurat_obj))
 
-markers <- FindMarkers(subset_seurat_obj, ident.1=c("pre_Naive", ident.2=c("pre_Th17")))  # Find DE genes based on Wilcoxon test based on the different conditions.
+markers <- FindMarkers(subset_seurat_obj, ident.1="post_Naive", ident.2="post_Tfh")  # Find DE genes based on Wilcoxon test based on the different conditions.
 markers <- subset(markers, p_val_adj < 0.05 & abs(avg_log2FC) > 0.5) # Subset only the adjusted significative genes.
 markers$gene <- row.names(markers)
 markers$diff <- markers$pct.1 - markers$pct.2
@@ -95,8 +95,8 @@ markers$diff <- markers$pct.1 - markers$pct.2
 
 # Repeat for all the 10 branches identified, and for the different conditions. 
 # Save gene list and Seurat objects for reproducibility. 
-write.csv(markers, file = "/home/roger/data_immunotherapy/CD4/DEgenes/branch2.csv", row.names = FALSE)
-write.csv(cell_names, file = "/home/roger/data_immunotherapy/CD4/cell_names/branch2.csv", row.names = FALSE)
+write.csv(markers, file = "/home/roger/data_immunotherapy/CD4/DEgenes/branch4.csv", row.names = FALSE)
+write.csv(cell_names, file = "/home/roger/data_immunotherapy/CD4/cell_names/branch4.csv", row.names = FALSE)
 
 ```
 
