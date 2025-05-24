@@ -5,8 +5,6 @@ This project investigates the dynamics of T cell differentiation in the tumor mi
 ![image](https://github.com/user-attachments/assets/f7cf5462-edfe-4052-b075-171cc6faeee6)
 
 
-Use Seurat (v...) to pre-process data 
-Use Monocle3 (v...) to infer trajectories
-Usage pyscenic (v...) to infer regulon activity
+Used Seurat to pre-process data, I used Monocle3 to infer the trajectories and pyscenic to infer regulon activty.
 
 
