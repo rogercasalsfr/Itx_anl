@@ -12,6 +12,11 @@ Load the data from SCC
 # Squamos cell carcionma 
 
 ```{r}
+#  you can load data from GEO repository
+expression_data <- fread("https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE123813&format=file&file=GSE123813%5Fscc%5FscRNA%5Fcounts%2Etxt%2Egz")
+metadata2 <- fread("https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE123813&format=file&file=GSE123813%5Fscc%5Fmetadata%2Etxt%2Egz")
+
+
 # Set working directory
 #setwd("C:/Users/Roger Casals/OneDrive/Escriptori/UOC ROGER/2n semestre/TFM/Final 5_5")
 setwd("C:/Users/Natàlia/Desktop/UOC ROGER/2n semestre/TFM/Primera prova")
