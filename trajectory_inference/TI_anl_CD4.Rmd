@@ -14,21 +14,8 @@ output: html_document
 library(Seurat)
 library(SeuratWrappers)
 library(monocle3)
-library(ggplot2)
-library(tidyr)
-library(dplyr)
-library(tidyverse)
-library(SingleCellExperiment)
-library(SeuratData)
 library(SeuratDisk)
-library(AnnotationDbi)
-library(dittoSeq)
-library(tidyverse)
-library(msigdbr)
-library(clusterProfiler)
-library(fgsea)
-library(org.Hs.eg.db)
-
+library(ggplot2)
 
 ```
 
@@ -37,9 +24,12 @@ library(org.Hs.eg.db)
 
 ```{r include=FALSE}
 
+setwd("C:/Users/Roger/Downloads")
+
+
 #CD4 <- LoadH5Seurat("/home/roger/Baixades/tots.h5seurat")
-#CD4pre <- LoadH5Seurat("/home/roger/Baixades/pre.h5seurat")
-CD4pre <- LoadH5Seurat("/home/roger/Baixades/post.h5seurat")
+CD4pre <- LoadH5Seurat("pre.h5seurat")
+#CD4pre <- LoadH5Seurat("/home/roger/Baixades/post.h5seurat")
 ```
 
 
@@ -49,30 +39,118 @@ CD4pre <- LoadH5Seurat("/home/roger/Baixades/post.h5seurat")
 We use Monocle3 package to learn the trajectory. 
 
 ```{r}
-# This example if for "pre-treatment conditions". But you can play with any comparision. 
+
+CD4pre <- CD8totssubsetpre
+
+
 
 set.seed(123)
 CD4pre@meta.data$cluster_redefined <- CD4pre@meta.data$cluster
 
 cds_object <- as.cell_data_set(CD4pre) # transform seurat to cell data object (input for monocle)
 cds_object <- cluster_cells(cds_object, reduction_method = "UMAP", )  # Cluster cells (necessary to learn graph)
-cds_object <- learn_graph(cds_object, use_partition = FALSE, learn_graph_control = list(euclidean_distance_ratio=2, minimal_branch_len=5, prune_graph=TRUE)) # Learn graph on an unsupervised manner. 
-# Some parameters to check 
+
+
+cds_object <- learn_graph(cds_object, use_partition = FALSE, close_loop = FALSE) 
+# Learn graph 
+
+# 
+Idents(CD4pre) <- "celltype.cnd"
 
 
 cds_object@clusters$UMAP$clusters <- CD4pre@active.ident
 
-cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "post_Naive"]))  # We set up the root as naive cells.
+cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "pre_Naive"]))  # We set up the root as naive cells.
 
-# Use plot_cells() to see the trajectory. 
-plot_cells(cds_object)
+# Select pre and post to color them.
+colData(cds_object)$celltype_base <- sub("^(pre|post)[_-]?", "",as.character(colData(cds_object)$celltype.cnd))
+
+p <- plot_cells(
+  cds_object,
+  trajectory_graph_segment_size = 20,
+  color_cells_by = "celltype_base", 
+  label_cell_groups = FALSE,
+  label_branch_points = FALSE,
+  label_roots = FALSE,
+  label_leaves = FALSE,
+  cell_size = 2
+)
+
+p + scale_color_manual(values = c(
+  "Naive" = "skyblue",
+  "Treg"  = "red",
+  "Tfh"   = "purple",
+  "Th17"  = "green"
+))
+
+
+ggsave("cd4_pre.svg", plot = last_plot(),
+       width = 10, height = 10, units = "in",
+       device = svglite::svglite, bg = "transparent")
+
+
 
 # Extract pseudotime values and closest nodes for each cell. Add into Seurat's object for further pre-processing
 cds_object$monocle3_pseudotime <- pseudotime(cds_object)
 cds_object@colData$closest_node <- principal_graph_aux(cds_object)$UMAP$pr_graph_cell_proj_closest_vertex
 
+
+
 ```
 
+```{r}
+# Post-treatment conditions
+
+CD4post <- CD8totssubsetpost
+
+set.seed(123)
+CD4post@meta.data$cluster_redefined <- CD4post@meta.data$cluster
+
+cds_object <- as.cell_data_set(CD4post) # transform seurat to cell data object (input for monocle)
+cds_object <- cluster_cells(cds_object, reduction_method = "UMAP")  # Cluster cells (necessary to learn graph)
+
+
+#cds_object <- learn_graph(cds_object, close_loop=FALSE, use_partition = FALSE, learn_graph_control = list(euclidean_distance_ratio=1, minimal_branch_len=25, prune_graph=TRUE, ncenter=100)) # Learn graph on an unsupervised manner. 
+# Some parameters to check 
+
+cds_object <- learn_graph(cds_object, use_partition = FALSE, close_loop=FALSE)
+
+
+Idents(CD4post) <- "celltype.cnd"
+
+
+cds_object@clusters$UMAP$clusters <- CD4post@active.ident
+
+cds_object <- order_cells(cds_object, reduction_method = 'UMAP', root_cells = colnames(cds_object[,clusters(cds_object) == "post_Naive"]))  # We set up the root as naive cells.
+
+
+colData(cds_object)$celltype_base <- sub("^(pre|post)[_-]?", "",as.character(colData(cds_object)$celltype.cnd))
+
+p <- plot_cells(
+  cds_object,
+  trajectory_graph_segment_size = 20,
+  color_cells_by = "celltype_base",  # <- fem servir la columna nova
+  label_cell_groups = FALSE,
+  label_branch_points = FALSE,
+  label_roots = FALSE,
+  label_leaves = FALSE,
+  cell_size = 2
+)
+
+p + scale_color_manual(values = c(
+  "Naive" = "skyblue",
+  "Treg"  = "red",
+  "Tfh"   = "purple",
+  "Th17"  = "green"
+))
+
+ggsave("cd4_post.svg", plot = last_plot(),
+       width = 10, height = 10, units = "in",
+       device = svglite::svglite, bg = "transparent")
+
+
+
+```
 
 
 # Find DE genes for each differentiation branch
