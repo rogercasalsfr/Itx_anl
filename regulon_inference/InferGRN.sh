@@ -1,5 +1,8 @@
-# get adj matrix
+# This is the example for all cd8 analysis. Point to other folders to use CD4.
 
+# You should download a priory motifs files and annotations (https://pyscenic.readthedocs.io/en/latest/installation.html)
+
+# get adj matrix
 sudo docker run -it --rm \
     -v /home/bisquared/scenic/totcd8:/home/bisquared/scenic/totcd8 \
     aertslab/pyscenic:0.12.1 pyscenic grn \
