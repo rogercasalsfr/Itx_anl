@@ -18,4 +18,4 @@ For transparency and reproducibility, the full package list and versions are pro
 
 ## Network Visualization
 Transcription factor (**TF**) interaction networks were generated using **Cytoscape**.  
-Details of the Cytoscape environment are included in the corresponding **session info** file.  
+Details of the Cytoscape environment are included in the corresponding **`session_cytoscape.cys`** file.  
