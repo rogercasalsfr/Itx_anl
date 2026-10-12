@@ -1,9 +1,12 @@
-**Immunotherapy trajectory inference**
+# Immunotherapy trajectory inference
 
-This project investigates the dynamics of T cell differentiation in the tumor microenvironment (TME) using single-cell RNA sequencing data (GEO123813) from patients pre- and post-therapy. Through trajectory inference, functional characterization, TCR clonotype tracking, and regulon analysis, it aims to uncover key mechanisms and drivers of the immune T cell response to anti-PD1 therapy.
+This project investigates the dynamics of T cell differentiation in the tumor microenvironment (TME) using single-cell RNA sequencing data ([GSE123813](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE123813)) from patients pre- and post-therapy. Through trajectory inference, functional characterization, TCR clonotype tracking, and regulon analysis, it aims to uncover key mechanisms and drivers of the immune T cell response to anti-PD1 therapy.
 
-See graphical approach.
-![image](https://github.com/user-attachments/assets/f7cf5462-edfe-4052-b075-171cc6faeee6)
+Preprint: [doi:10.1101/2025.10.15.682506](https://doi.org/10.1101/2025.10.15.682506) · Step-by-step protocol: [immuno-trajectory-grn-integrative-workflow](https://github.com/rogercasalsfr/immuno-trajectory-grn-integrative-workflow)
+
+## Overview
+
+![Graphical overview of the analysis](https://github.com/user-attachments/assets/f7cf5462-edfe-4052-b075-171cc6faeee6)
 
 This repository contains the scripts and notebooks required to reproduce the results presented in the study.
 
@@ -31,3 +34,15 @@ For transparency and reproducibility, the full R package list and versions are p
 ## Network Visualization
 Transcription factor (**TF**) interaction networks were generated using **Cytoscape**.
 Details of the Cytoscape environment are included in the corresponding **`session_cytoscape.cys`** file.
+
+## Citation
+
+> Casals-Franch R, Villà-Freixa J, Nonell L, López García de Lomana A. Transcriptional reprogramming of
+> tumor-infiltrating T cells during PD-1 blockade revealed through gene regulatory network and trajectory
+> inference in squamous cell carcinoma. *bioRxiv* (2025). <https://doi.org/10.1101/2025.10.15.682506>
+
+Data: Yost KE *et al.* Clonal replacement of tumor-specific T cells following PD-1 blockade. *Nature Medicine* 25, 1251–1259 (2019).
+
+## License
+
+[MIT](LICENSE) © Roger Casals-Franch
